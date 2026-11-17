@@ -1,4 +1,4 @@
-# j5-ev-dashboard engineering notes
+# openlinko engineering notes
 
 ## Compatibility on every change
 
@@ -59,8 +59,9 @@ relay, then registers the relay-issued ID and sender secret with the dashboard.
 When the dispatcher starts sending a new kind or value, deploy the relay first.
 
 The fork's own dashboard runs on Railway (project `tiggo-7-phev`, service
-`j5-ev-dashboard`): `production` deploys fork `main`, `staging` deploys fork
-`staging`, each with its own `/data` volume. Push to the `fork` remote; `origin`
+`openlinko`, renamed from `j5-ev-dashboard` on 2026-11-17 — the rename changed no
+domain, deployment or start command): `production` deploys fork `main`, `staging`
+deploys fork `staging`, each with its own `/data` volume (`openlinko-volume`). Push to the `fork` remote; `origin`
 is upstream. The image's CMD is the dashboard alone, so what keeps the car
 logged is each environment's **start command**, `bash railway_start.sh` — a
 Railway service setting, not a file in the repo (this service ignores a root
