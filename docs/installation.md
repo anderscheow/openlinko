@@ -44,8 +44,8 @@ Keep the window open: it runs the dashboard and the logger. On another OS, `pyth
 On a home server, mini PC or Raspberry Pi, this sets up the virtualenv, dependencies, login and both systemd services, so it survives reboots:
 
 ```bash
-git clone https://github.com/anderscheow/j5-ev-dashboard.git
-cd j5-ev-dashboard
+git clone https://github.com/anderscheow/openlinko.git
+cd openlinko
 ./tools/install.sh
 ```
 
@@ -80,7 +80,7 @@ Set `bash railway_start.sh` as the service start command and attach a persistent
 Paste this into an agent (Claude Code, Cursor, …) running on the machine that will host the dashboard:
 
 ```text
-Set up the open-source project https://github.com/anderscheow/j5-ev-dashboard on this machine.
+Set up the open-source project https://github.com/anderscheow/openlinko on this machine.
 Clone it, then bring it up with Docker (docker compose up -d --build). It serves a login page
 on http://localhost:8088; tell me the URL when it's running. I'll enter my CarLinko email and
 password there myself; do not ask me for them. If Docker isn't available, fall back to the

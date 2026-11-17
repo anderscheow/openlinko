@@ -61,7 +61,10 @@ When the dispatcher starts sending a new kind or value, deploy the relay first.
 The fork's own dashboard runs on Railway (project `tiggo-7-phev`, service
 `openlinko`, renamed from `j5-ev-dashboard` on 2026-11-17 — the rename changed no
 domain, deployment or start command): `production` deploys fork `main`, `staging`
-deploys fork `staging`, each with its own `/data` volume (`openlinko-volume`). Push to the `fork` remote; `origin`
+deploys fork `staging`, each with its own `/data` volume (`openlinko-volume`). The fork itself is `anderscheow/openlinko` (it was `j5-ev-dashboard`
+until 2026-11-17; both environments' deploy triggers followed the rename on their
+own — check with `railway api` → `deploymentTriggers`, and repoint with
+`deploymentTriggerUpdate` if one ever keeps the old name). Push to the `fork` remote; `origin`
 is upstream. The image's CMD is the dashboard alone, so what keeps the car
 logged is each environment's **start command**, `bash railway_start.sh` — a
 Railway service setting, not a file in the repo (this service ignores a root

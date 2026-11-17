@@ -24,8 +24,8 @@ Anda memerlukan Docker Compose, akaun CarLinko yang mempunyai akses kepada keret
 1. Klon fork ini dan mulakan pelayan web serta logger:
 
    ```bash
-   git clone https://github.com/anderscheow/j5-ev-dashboard.git
-   cd j5-ev-dashboard
+   git clone https://github.com/anderscheow/openlinko.git
+   cd openlinko
    docker compose up -d --build
    ```
 

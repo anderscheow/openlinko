@@ -24,8 +24,8 @@
 1. 克隆本 fork，并启动 Web 服务和日志记录器：
 
    ```bash
-   git clone https://github.com/anderscheow/j5-ev-dashboard.git
-   cd j5-ev-dashboard
+   git clone https://github.com/anderscheow/openlinko.git
+   cd openlinko
    docker compose up -d --build
    ```
 
