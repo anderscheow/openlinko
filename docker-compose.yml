@@ -8,7 +8,7 @@
 services:
   web:
     build: .
-    image: j5-ev-dashboard
+    image: openlinko
     command: python server.py 8088
     ports:
       - "8088:8088"
@@ -21,7 +21,7 @@ services:
 
   logger:
     build: .
-    image: j5-ev-dashboard
+    image: openlinko
     command: python logger.py --adaptive
     volumes:
       - ./data:/data

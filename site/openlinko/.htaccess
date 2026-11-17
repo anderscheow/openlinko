@@ -1,0 +1,15 @@
+# This host has no mod_headers (a bare Header line gives 500), so the CSP and referrer policy
+# live in <meta> tags in the HTML. The block below only applies if the module is enabled later.
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+</IfModule>
+Options -Indexes
+<FilesMatch "\.(py|md|zip|bak|sh)$">
+  Require all denied
+</FilesMatch>

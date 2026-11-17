@@ -9,3 +9,4 @@ docs/
 apk/
 .git/
 .playwright-mcp/
+**/device.json

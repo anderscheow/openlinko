@@ -343,6 +343,69 @@ def _control_caps():
         "plate": v.get("licenseNumber") or "",
     }
 
+def car_report():
+    """Plain-text report for an "Add my car" issue: model, region, what CarLinko's own config says
+    this car supports, which constants we already know, and a few raw telemetry frames (parked /
+    driving / charging) so the byte offsets can be checked against a new model. The status blob
+    carries no position; plate, VIN and account ids are stripped from everything that goes out."""
+    import auth
+    v = {} if DEMO else (_vehicle_raw() or {})
+    hide = [x for x in (v.get("vin"), v.get("licenseNumber"), VEHICLE.get("vin"), VEHICLE.get("plate"),
+                           _CC.get("email"), _CC.get("device_sn"), str(_CC.get("vehicle_id") or ""))
+               if x and x not in ("—", "EV") and len(str(x)) >= 4]
+    def scrub(t):
+        for x in hide:
+            t = t.replace(str(x), "<redacted>")
+        return t
+    cfg = v.get("vehicleControlConfig")
+    if isinstance(cfg, str):
+        try: cfg = json.loads(cfg)
+        except Exception: cfg = {"_unparsed": cfg[:400]}
+    frames = {}
+    try:
+        conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+        try:
+            rows = conn.execute("SELECT ts, raw FROM telemetry WHERE online=1 AND raw IS NOT NULL "
+                                "ORDER BY rowid DESC LIMIT 60000").fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        rows = []
+    for ts, raw in rows:
+        try: d = decode_cached(raw)
+        except Exception: continue
+        # plugged in = a connector is reported (charge_power alone also moves with regen)
+        kind = ("charging" if d.get("charge_mode") in (1, 16) and d.get("charge_state") == 1
+                else "driving" if (d.get("speed") or 0) >= 15 else
+                "parked" if not d.get("charge_mode") and (d.get("speed") or 0) == 0 else None)
+        if kind is None:
+            continue
+        if kind not in frames:
+            frames[kind] = (ts, raw, d)
+        if len(frames) == 3:
+            break
+    model = VEHICLE.get("model") or v.get("model") or "?"
+    L = ["### OpenLinko car report", "",
+         f"- model (as CarLinko names it): `{model}`",
+         f"- region: `{auth._region()}`",
+         f"- in known_cars: {'yes' if KNOWN else 'no'}; battery_kwh {CAP_KWH:g} ({CAP_SOURCE}), "
+         f"wltp {WLTP_KWH_100:g} ({'known' if WLTP_KNOWN else 'guess'}), tpms_scale {TPMS_SCALE:g}, "
+         f"powertrain {POWERTRAIN}, chemistry {CHEMISTRY} ({'known' if CHEMISTRY_KNOWN else 'guess'})",
+         f"- frames logged: {len(rows)}{'+' if len(rows) >= 60000 else ''}", ""]
+    for kind in ("parked", "driving", "charging"):
+        if kind not in frames:
+            L.append(f"**{kind}:** no frame yet"); continue
+        ts, raw, d = frames[kind]
+        keep = {k: d.get(k) for k in ("battery", "range_km", "odometer", "volt12", "speed", "consumption",
+                                      "fuel_pct", "charge_mode", "charge_state", "charge_power", "charge_remain")
+                if d.get(k) is not None}
+        L += [f"**{kind}** ({time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))}): "
+              + ", ".join(f"{k}={val}" for k, val in keep.items()),
+              "```", raw, "```"]
+    L += ["", "<details><summary>vehicleControlConfig</summary>", "", "```json",
+          json.dumps(cfg or {}, ensure_ascii=False, sort_keys=True)[:6000], "```", "</details>"]
+    return scrub("\n".join(L))
+
 def _seat_caps(ac):
     """Seat heat / vent levels per seat, from the car's own A/C config. A seat counts only when
     its feature flag is on AND its level list offers something: the J5 publishes
@@ -886,7 +949,33 @@ POWERTRAIN = (_CC.get("powertrain") or KNOWN.get("powertrain") or "auto").lower(
 # LFP's discharge curve is nearly flat, so the BMS loses its SoC reference without a periodic
 # 100% charge (it re-anchors + balances cells there). ~weekly is the common OEM line; NMC has no
 # such need and prefers not to sit full, so don't nag those owners.
-BALANCE_DAYS = float(_CC.get("full_charge_days") or (7 if CHEMISTRY == "lfp" else 90))
+# The interval is learned from how hard the owner uses the pack (see balance_plan): a fixed
+# weekly 100% (Tesla's line) over-charges a light driver, whose BMS barely drifts, and parks the
+# pack at 100% more often than needed. full_charge_days in car.json pins it to a fixed number.
+BALANCE_FIXED = _CC.get("full_charge_days")
+BALANCE_DAYS = float(BALANCE_FIXED or (7 if CHEMISTRY == "lfp" else 90))   # fallback w/o history
+BALANCE_CYCLES = 1.5        # LFP: re-anchor after ~1.5 full packs of use (150% SoC drawn)
+BALANCE_MIN, BALANCE_MAX = 7, 30   # Tesla weekly .. Ford monthly
+
+
+def balance_plan(fr, full, now):
+    """Learn the 100%-charge interval from this car's own use: days it takes to draw
+    BALANCE_CYCLES packs at the last 28 days' pace, clamped to BALANCE_MIN..MAX.
+    Returns (interval_days, pct_per_week, pct_used_since_full)."""
+    if CHEMISTRY != "lfp" or BALANCE_FIXED:
+        return BALANCE_DAYS, None, None
+    cut = now - 28 * 86400; last = full[-1]["end"] if full else None
+    used28 = since = 0
+    for (t0, b0, _), (t1, b1, _) in zip(fr, fr[1:]):
+        if b1 < b0:
+            if t0 >= cut: used28 += b0 - b1
+            if last is not None and t0 >= last: since += b0 - b1
+    span = min(28.0, (now - fr[0][0]) / 86400) if fr else 0
+    if span < 7 or used28 <= 0:
+        return BALANCE_DAYS, None, since if full else None
+    per_day = used28 / span
+    days = max(BALANCE_MIN, min(BALANCE_MAX, round(BALANCE_CYCLES * 100 / per_day)))
+    return float(days), round(per_day * 7), since if full else None
 IDLE_GAP = 1800         # parked + no SoC rise for 30 min => charge session ended
 CHARGE_PARK_MIN = 600   # a real charge sits odo-flat >=10 min; regen blips (odo coarse=1km) don't
 MIN_GAIN_PCT = 2        # net SoC gain floor; drops 1% regen/noise that survives the park gate
@@ -1277,6 +1366,7 @@ def analyze(data, trips, kwh_day, book):
         # pack kWh over metered kWh: the receipt's where the owner entered one, else chg_eff()
         "avg_eff": round(sum(s["kwh"] / s["billed"] for s in sess) / len(sess) * 100) if sess else None,
         "sessions": len(sess)}
+    out["health"]["pack"] = pack_health(data, sess)
     out["lifetime"] = {                                # running totals since logging began
         "kwh_in": round(sum(s["kwh"] for s in sess), 1),                          # into the pack
         "kwh_billed": round(sum(s["billed"] for s in sess), 1),                   # metered (paid for)
@@ -1290,20 +1380,25 @@ def analyze(data, trips, kwh_day, book):
     # drifts without one. Track the interval so the dashboard can say *when*, not just "overdue".
     full = [s for s in sess if s["soc1"] >= 100]
     since = (now - full[-1]["start"]) / 86400 if full else None
-    due_in = round(BALANCE_DAYS - since, 1) if since is not None else None
+    bal_days, pct_week, used_since = balance_plan(fr, full, now)
+    due_in = round(bal_days - since, 1) if since is not None else None
     out["battery_care"] = {
         "chemistry": CHEMISTRY,
-        "interval_days": BALANCE_DAYS,
+        "interval_days": bal_days,
+        "learned": pct_week is not None,                # interval comes from this car's own use
+        "pct_per_week": pct_week,                       # SoC drawn per week, last 28 days
+        "used_since_full": used_since,                  # % drawn since the last 100%
+        "target_used": round(BALANCE_CYCLES * 100) if pct_week is not None else None,
         "last_full_dt": time.strftime("%d %b", time.localtime(full[-1]["start"])) if full else None,
         "days_since_full": round(since) if since is not None else None,
         "days_to_due": due_in,                          # negative = overdue by that many days
-        "next_due_dt": (time.strftime("%d %b", time.localtime(full[-1]["start"] + BALANCE_DAYS * 86400))
+        "next_due_dt": (time.strftime("%d %b", time.localtime(full[-1]["start"] + bal_days * 86400))
                         if full else None),
         # three states, so "do it this week" reads differently from "you're well past due"
         "state": ("unknown" if not full else
-                  "overdue" if since >= BALANCE_DAYS * 2 else
-                  "due" if since >= BALANCE_DAYS else "ok"),
-        "balance_due": (not full) or (since >= BALANCE_DAYS)}   # kept for older clients
+                  "overdue" if since >= bal_days * 2 else
+                  "due" if since >= bal_days else "ok"),
+        "balance_due": (not full) or (since >= bal_days)}   # kept for older clients
     live = _live_soc_session(data, sess)
     if live:
         lr = live_rate(live["pts"])
@@ -1359,6 +1454,78 @@ def parked_drain(data):
         best = {"pct": s0 - s1, "hours": round(hrs, 1), "per_day": round((s0 - s1) / hrs * 24, 1),
                 "dt": time.strftime("%d %b", time.localtime(ts1))}   # loop ascending -> ends newest
     return best
+
+V12_AWAKE = 13.2   # above this the DC-DC converter is topping the 12V up from the main pack
+
+def pack_health(data, sess, n=6, n_early=3):
+    """Rough battery health from charging history alone, no OBD dongle. The car reports the
+    charger's live power (b62-63); integrated over a session and divided by the SoC gained it
+    gives kWh per full pack. A fading pack needs fewer kWh per 100%, so the recent median over the
+    first sessions' median is a capacity trend -- relative to when logging began, not to
+    factory-new. Only long sessions count (>=40% gained, no data hole). DC (peak >=20 kW) and AC
+    read on different sides of the onboard charger (~64 vs ~54 kWh/100% on two J5s), so each
+    mode keeps its own baseline and the one with more sessions is shown. 3 vs 3 sessions gives
+    an early, looser reading; 6 vs 6 the settled one."""
+    import bisect
+    ts = [f[0] for f in data]
+    pts = {"dc": [], "ac": []}
+    for s in sess:
+        gain = s["soc1"] - s["soc0"]
+        if gain < 40 or s.get("ongoing"):
+            continue
+        i0 = bisect.bisect_left(ts, s["start"] - 120); i1 = min(bisect.bisect_right(ts, s["end"] + 120), len(data) - 1)
+        e = pk = 0.0; gap = 0
+        for k in range(i0, i1):
+            dt = data[k + 1][0] - data[k][0]
+            gap = max(gap, dt)
+            p = data[k][2].get("charge_power") or 0
+            e += p * dt / 3600.0; pk = max(pk, p)
+        mode = "dc" if pk >= 20 else "ac"
+        # DC power swings, so a 2 min hole already skews it; slow AC is flat, 10 min is harmless
+        if e <= 0 or pk < 1 or gap > (120 if mode == "dc" else 600):
+            continue
+        pts[mode].append({"d": time.strftime("%Y-%m-%d", time.localtime(s["start"])),
+                          "kwh100": round(e / gain * 100, 1)})
+    mode = "ac" if len(pts["ac"]) > len(pts["dc"]) else "dc"
+    p = pts[mode]; other = "ac" if mode == "dc" else "dc"
+    out = {"soh": None, "mode": mode, "sessions": len(p), "points": p,
+           "other": {"mode": other, "sessions": len(pts[other])}}
+    k = n if len(p) >= 2 * n else n_early if len(p) >= 2 * n_early else 0
+    need = 2 * (n_early if k == 0 else n)              # sessions until the next stage
+    out["need"] = need if len(p) < 2 * n else None
+    if data and p and out["need"]:                     # ETA from this car's own pace of long charges
+        days = max(1.0, (time.time() - data[0][0]) / 86400)
+        out["eta_days"] = round((need - len(p)) / (len(p) / days))
+    if not k:
+        return out
+    med = lambda v: sorted(v)[len(v) // 2]
+    base = med([x["kwh100"] for x in p[:k]]); now = med([x["kwh100"] for x in p[-k:]])
+    out.update(soh=min(100, round(now / base * 100)), base_kwh100=base, now_kwh100=now,
+               since=p[0]["d"], early=k < n, margin=3 if k >= n else 5)
+    return out
+
+
+def volt12_history(data, days=30):
+    """Per local day for the last `days`: lowest and highest 12V reading, and the median of the
+    readings taken while the DC-DC was off (the battery's own resting voltage, None if the car
+    never slept that day). Walks the frames newest-first and stops at the cutoff."""
+    cutoff = time.time() - days * 86400
+    by = {}
+    for ts, dt, d in reversed(data):
+        if ts < cutoff:
+            break
+        v = d.get("volt12")
+        if not v:
+            continue
+        by.setdefault(time.strftime("%Y-%m-%d", time.localtime(ts)), []).append(v)
+    out = []
+    for day in sorted(by):
+        vs = by[day]
+        rest = sorted(v for v in vs if v < V12_AWAKE)
+        out.append({"d": day, "lo": round(min(vs), 2), "hi": round(max(vs), 2),
+                    "rest": round(rest[len(rest) // 2], 2) if rest else None,
+                    "awake": round(100 * (len(vs) - len(rest)) / len(vs))})
+    return out
 
 def insights(out, paid=None, book=None):
     """Actionable read-only insights from the data: running cost, charge forecast, real range.
@@ -1505,16 +1672,24 @@ def demo_summary():
         "km": {"today": 52, "week": 201, "month": 1043},
         "charges": {"week": 2, "month": 9},
         "history": history, "resync_km": "skip",
-        "health": {"usable_kwh": cap, "cycles": 31.4, "charged_kwh": 1612.0, "avg_eff": 89, "sessions": 38},
+        "health": {"usable_kwh": cap, "cycles": 31.4, "charged_kwh": 1612.0, "avg_eff": 89, "sessions": 38,
+                   "pack": {"soh": 99, "base_kwh100": 64.6, "now_kwh100": 63.9, "since": "2026-06-22",
+                            "sessions": 22, "points": [], "mode": "dc", "margin": 3,
+                            "early": False, "need": None}},
         "lifetime": {"kwh_in": 1448.0, "kwh_billed": 1612.0, "cost": 4090000, "km": 8127,
                      "since": time.strftime("%d %b", time.localtime(now - 96 * 86400)),
                      "saved": 7240000, "liters_saved": 677.3, "co2_saved": 1564},
-        "battery_care": {"chemistry": CHEMISTRY, "interval_days": BALANCE_DAYS,
+        "battery_care": {"chemistry": CHEMISTRY, "interval_days": 12.0, "learned": True,
+                         "pct_per_week": 88, "used_since_full": 52, "target_used": 150,
                          "last_full_dt": time.strftime("%d %b", time.localtime(now - 4 * 86400)),
-                         "days_since_full": 4, "days_to_due": round(BALANCE_DAYS - 4, 1),
-                         "next_due_dt": time.strftime("%d %b", time.localtime(now + (BALANCE_DAYS - 4) * 86400)),
+                         "days_since_full": 4, "days_to_due": 8.0,
+                         "next_due_dt": time.strftime("%d %b", time.localtime(now + 8 * 86400)),
                          "state": "ok", "balance_due": False},
         "drain": None, "volt12_min7d": 12.7, "volt12_status": "ok",
+        "volt12_hist": [{"d": time.strftime("%Y-%m-%d", time.localtime(time.time() - (29 - i) * 86400)),
+                         "lo": round(12.6 + 0.1 * math.sin(i), 2), "hi": 14.2 if i % 3 else 13.0,
+                         "rest": round(12.7 + 0.08 * math.sin(i), 2), "awake": 30 if i % 3 else 0}
+                        for i in range(30)],
         "insights": {}, "moving": False,
     }
     out["insights"] = insights(out)
@@ -1957,6 +2132,12 @@ def _summary():
     out["battery_care"] = res.get("battery_care", {})
     out["drain"] = parked_drain(data)                  # SoC lost across offline/parked gaps
     out.update(_volt12_watch(data, now))
+    # Upstream's per-day 12V history and resting-voltage low feed its v2 page. The status
+    # above stays on _volt12_watch's sustained-low rule (VOLT12_LOW / VOLT12_CRITICAL).
+    out["volt12_hist"] = volt12_history(data)
+    rest7 = [h["rest"] for h in out["volt12_hist"][-7:] if h["rest"] is not None]
+    if rest7:
+        out["volt12_rest7d"] = min(rest7)
     out["insights"] = insights(out, res["paid"], book)
     lf = out.get("lifetime") or {}                     # saved-vs-petrol over distance actually driven
     if lf.get("km"):
@@ -2923,6 +3104,14 @@ class H(BaseHTTPRequestHandler):
                         self.wfile.write(b": ping\n\n"); self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass                                   # tab closed
+            return
+        if path == "/api/carreport":                   # "Add my car" issue: redacted model/config/frames
+            if not self._authed():
+                self._send(401, b'{"error":"auth"}', "application/json"); return
+            try:
+                self._send(200, car_report().encode(), "text/plain; charset=utf-8")
+            except Exception as e:
+                self._send(500, ("car report failed: %r" % (e,)).encode()[:300], "text/plain")
             return
         if path == "/api/controls":                    # what this car supports + opcodes to test
             if not self._authed():

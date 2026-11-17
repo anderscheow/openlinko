@@ -909,7 +909,7 @@ const MAP_ID={
   "No trips yet — drive and they appear here.":"Belum ada perjalanan — berkendara dan akan muncul di sini.",
   "shown":"ditampilkan","kWh used":"kWh dipakai","cycles":"siklus","in":"masuk","mo":"bln","day":"hari","days":"hari",
   "saves":"hemat","vs petrol":"vs bensin","drives":"pakai","left now":"tersisa","car rates":"mobil klaim","since":"sejak",
-  "on":"pada","not logged yet":"belum tercatat","LFP likes a weekly 100%":"LFP suka diisi 100% tiap minggu",
+  "on":"pada","not logged yet":"belum tercatat","LFP likes a regular 100%":"LFP perlu sesekali diisi 100%",
   "next in":"berikutnya","due today":"jatuh tempo hari ini","overdue by":"telat","No 100% logged":"Belum ada isi 100%",
   "Fuel":"Bensin","Fuel range":"Jangkauan bensin","EV range":"Jangkauan EV",
   "NMC — no routine 100% needed":"NMC — tak perlu 100% rutin",
@@ -1499,8 +1499,8 @@ function bCare(){ const BC=DATA.battery_care||{}, lfp=(BC.chemistry||'lfp')==='l
               : tn('Your pack is NMC — different rules to LFP.','Baterai kamu NMC — aturannya beda dari LFP.'),
     rows: rows,
     note: lfp
-      ? tn(`LFP's discharge curve is almost flat, so the BMS has no voltage landmark to read SoC from — it drifts. A full 100% charge is that landmark: it re-anchors the gauge and balances the cells. Do it about every ${Math.round(iv)} days. Unlike NMC, sitting at 100% does <b>not</b> hurt LFP, so there's no reason to avoid it. If your % readings have started jumping around, a full charge is usually the fix.`,
-           `Kurva pengosongan LFP hampir datar, jadi BMS tak punya patokan tegangan untuk membaca SoC — lama-lama melenceng. Isi penuh 100% adalah patokan itu: mengunci ulang gauge dan menyeimbangkan sel. Lakukan tiap sekitar ${Math.round(iv)} hari. Beda dari NMC, diam di 100% <b>tidak</b> merusak LFP, jadi tak perlu dihindari. Kalau angka % mulai lompat-lompat, isi penuh biasanya obatnya.`)
+      ? tn(`LFP's discharge curve is almost flat, so the BMS has no voltage landmark to read SoC from — it drifts. A full 100% charge is that landmark: it re-anchors the gauge and balances the cells. Do it about every ${Math.round(iv)} days${BC.learned?` (learned from your driving: about ${BC.pct_per_week}% used a week, one full charge per ${BC.target_used}% used)`:''}. Sitting at 100% for long ages LFP a little faster, more so in heat, so finish the charge shortly before you drive. If your % readings have started jumping around, a full charge is usually the fix.`,
+           `Kurva pengosongan LFP hampir datar, jadi BMS tak punya patokan tegangan untuk membaca SoC — lama-lama melenceng. Isi penuh 100% adalah patokan itu: mengunci ulang gauge dan menyeimbangkan sel. Lakukan tiap sekitar ${Math.round(iv)} hari${BC.learned?` (dipelajari dari pemakaianmu: sekitar ${BC.pct_per_week}% per minggu, sekali isi penuh tiap ${BC.target_used}% terpakai)`:''}. Diam lama di 100% sedikit mempercepat penuaan LFP, apalagi saat panas, jadi selesaikan isi penuh menjelang berangkat. Kalau angka % mulai lompat-lompat, isi penuh biasanya obatnya.`)
       : tn(`NMC packs don't need a routine 100% — they prefer to live around 20–80%, and sitting full ages them faster. An occasional full charge still helps the BMS recalibrate, but there's no weekly rule.`,
            `Baterai NMC tak butuh 100% rutin — lebih baik di kisaran 20–80%, dan diam penuh mempercepat penuaan. Sesekali isi penuh tetap membantu kalibrasi BMS, tapi tak ada aturan mingguan.`)};
 }
@@ -1900,7 +1900,7 @@ async function load(live){
     dd<1  ? '<b>'+T('due today')+'</b>' :
             T('next in')+' <b>'+Math.round(dd)+'</b> '+T('days')+(BC.next_due_dt?' ('+BC.next_due_dt+')':'');
   $('careR').innerHTML = (BC.last_full_dt? T('on')+' <b>'+BC.last_full_dt+'</b>' : T('not logged yet'))
-    + '<br>' + (when || (lfp?T('LFP likes a weekly 100%'):T('NMC — no routine 100% needed')));
+    + '<br>' + (when || (lfp?T('LFP likes a regular 100%'):T('NMC — no routine 100% needed')));
   renderSvc();
 
   $('odo').textContent=fmt(d.odometer);

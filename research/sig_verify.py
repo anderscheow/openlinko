@@ -4,7 +4,7 @@ from mitmproxy import io, http
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # Signing key loaded from creds.json (extract from your own app capture — see README). Capture path = argv[1].
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")  # creds.json / token.txt live there
 try: _C = json.load(open(os.path.join(_HERE, "creds.json")))
 except Exception: _C = {}
 KEY = (_C.get("sign_key") or "").encode()

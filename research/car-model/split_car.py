@@ -1,11 +1,11 @@
-"""Stage 2 of the car model: cut the mid-poly car mesh (tools/car_prep.py) into the animated parts of web/car3d.js.
+"""Stage 2 of the car model: cut the mid-poly car mesh (research/car-model/car_prep.py) into the animated parts of web/car3d.js.
 
-pipeline (current, Oct 2026): official J5 EV studio render -> TRELLIS.2 (res 1024) -> tools/car_mirror.py
-          -> tools/car_prep.py --mid 120000 --taubin 6 -> tools/car_solid.py (booleans need a closed mesh)
+pipeline (current, Oct 2026): official J5 EV studio render -> TRELLIS.2 (res 1024) -> research/car-model/car_mirror.py
+          -> research/car-model/car_prep.py --mid 120000 --taubin 6 -> research/car-model/car_solid.py (booleans need a closed mesh)
           -> this script --body 30000 --door 4000 --gate 5000 -> web/car_parts.json  (details: car_solid.py)
           older: nano-banana clay renders -> Hunyuan3D-2mv (res 512, seed 1) -> car_prep.py --taubin 40 -> this script
 usage (needs trimesh, numpy, scipy, pymeshlab; the Hunyuan3D venv has them):
-  python tools/split_car.py build/car_t40_s1.glb web/car_parts [--body 11000 --door 1800 --gate 2400]
+  python research/car-model/split_car.py build/car_t40_s1.glb web/car_parts [--body 11000 --door 1800 --gate 2400]
   add --quick to skip every cut and preview a source mesh in seconds
 
 Frame is car3d.js's: front +Z, car's left side +X, wheels on y=0, real size (4.38 x 1.86 x 1.65 m).

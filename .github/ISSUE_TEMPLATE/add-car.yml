@@ -1,0 +1,92 @@
+name: "🚙 Add my car"
+description: "Your model isn't supported yet, or a number is off. Paste the car report and what your car's own screen says."
+title: "[car] <model> / <country>"
+labels: ["compatibility", "add-car"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping add your car. Two things make this work:
+        1. the **car report** from the dashboard (**Account → Report my car → Copy report**), and
+        2. a few readings from **your car's own screen** at about the same time, so each number can be matched to its byte.
+
+        > ⚠️ This issue is public. The report already removes plate, VIN, email and account ids, and the status frames carry no location. Don't paste a token, password, VIN or plate anywhere else on this form either.
+
+  - type: input
+    id: model
+    attributes:
+      label: Car model and year
+      description: As it's sold in your country.
+      placeholder: "e.g. Omoda E5 2025, Chery Tiggo 8 PHEV 2024"
+    validations:
+      required: true
+
+  - type: input
+    id: country
+    attributes:
+      label: Country
+      placeholder: "e.g. Malaysia, Philippines, South Africa"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: powertrain
+    attributes:
+      label: Powertrain
+      options:
+        - Full electric (BEV)
+        - Plug-in hybrid (PHEV)
+        - Hybrid, not plug-in
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: battery
+    attributes:
+      label: Battery capacity (kWh)
+      description: From the brochure or spec sheet. This is the one number the car never reports, and every kWh and cost figure depends on it.
+      placeholder: "e.g. 61"
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Car report
+      description: Paste what **Copy report** gave you. It's formatted already.
+      placeholder: "### OpenLinko car report ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: dash
+    attributes:
+      label: What your car's own screen shows
+      description: Take these at about the same time as the report (within a few minutes). Leave out anything your car doesn't show.
+      value: |
+        - Battery %:
+        - Range (km):
+        - Odometer (km):
+        - Average consumption (kWh/100 km):
+        - Tyre pressures (FL / FR / RL / RR, and the unit):
+        - Fuel % and L/100 km (PHEV only):
+        - Charging power (kW), if it was charging:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What already works on your car
+      options:
+        - label: Sign-in and the car shows up
+        - label: Battery %, range and odometer look right
+        - label: Charging sessions are detected
+        - label: Lock / unlock from the Control tab
+        - label: A/C from the Control tab
+        - label: Tyre pressures look right
+
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What's wrong or missing
+      description: Any number that looked off, or a control that didn't do anything. Screenshots help (blur the plate).

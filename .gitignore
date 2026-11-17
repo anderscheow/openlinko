@@ -13,6 +13,8 @@ tools/prices.db
 dash-*.png
 token.txt
 tools/token.txt
+device.json
+tools/device.json
 creds.json
 tools/creds.json
 

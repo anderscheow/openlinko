@@ -1,5 +1,5 @@
 """CarLinko auth: request signing + self-login (token auto-refresh).
-Signing recovered from libapp.so (Blutter): see docs/decompiled/secure_*_utils.dart.
+Signing recovered from libapp.so (Blutter): see research/decompiled/secure_*_utils.dart.
   signature = base64(HMAC-SHA256(SIGN_KEY,
               jsonEncode(sortByKeyAsc({...params, timestamp}))))   # Dart jsonEncode = no spaces
 Login = POST /user/login with a plaintext password body. The `v-data` header the app sends is
@@ -179,6 +179,45 @@ def login(manual=False, retry=False):
     _record(True)
     return token
 
+# ---- per-install device profile ----
+# Every install used to log in as the same "Google Pixel 7 Pro / Android 13", so CarLinko could
+# pick out every dashboard user with one query. Each install now picks one realistic phone once and
+# keeps it in device.json (next to token.txt), so it looks like one steady phone per account.
+DEVICE_FILE = os.path.join(_DATA, "device.json")
+_PHONES = [
+    ("samsung", "SM-S918B", ("13", "14")), ("samsung", "SM-S911B", ("13", "14")),
+    ("samsung", "SM-A546E", ("13", "14")), ("samsung", "SM-A356E", ("14",)),
+    ("samsung", "SM-S928B", ("14",)), ("Xiaomi", "23078PND5G", ("13", "14")),
+    ("Xiaomi", "2201116SG", ("12", "13")), ("Redmi", "23090RA98G", ("13", "14")),
+    ("OPPO", "CPH2581", ("13", "14")), ("OPPO", "CPH2523", ("13",)),
+    ("vivo", "V2250", ("13", "14")), ("vivo", "V2312", ("13", "14")),
+    ("Google", "Pixel 8", ("14",)), ("Google", "Pixel 7", ("13", "14")),
+    ("OnePlus", "CPH2449", ("13", "14")), ("realme", "RMX3771", ("13", "14")),
+    ("HUAWEI", "ANA-NX9", ("12",)), ("motorola", "moto g84 5G", ("13", "14")),
+]
+
+def device_profile():
+    """This install's phone identity: {"phoneBrand", "phoneModel", "osVersion"}. creds.json
+    "device" overrides it; otherwise one is picked at random once and stored in device.json."""
+    over = cfg().get("device")
+    if isinstance(over, dict) and over.get("phoneModel"):
+        return over
+    try:
+        d = json.load(open(DEVICE_FILE))
+        if d.get("phoneModel"):
+            return d
+    except Exception:
+        pass
+    import random
+    brand, model, oses = random.SystemRandom().choice(_PHONES)
+    d = {"phoneBrand": brand, "phoneModel": model, "osVersion": random.SystemRandom().choice(oses)}
+    try:
+        with open(DEVICE_FILE, "w") as f:
+            json.dump(d, f)
+    except Exception:
+        pass
+    return d
+
 class _Rejected(Exception):
     def __init__(self, d):
         self.raw = d
@@ -187,6 +226,7 @@ class _Rejected(Exception):
 
 def _do_login():
     c = json.load(open(CREDS))
+    dev = device_profile()
     body = {
         "account": c["email"],
         "password": c["password"],
@@ -195,11 +235,11 @@ def _do_login():
         "osType": "ANDROID",
         "appName": "CarLinko",
         "appVersion": "1.12.0",
-        "osVersion": "13",
+        "osVersion": str(dev.get("osVersion", "14")),
         "language": "en",
-        "timeZone": "Asia/Jakarta",
-        "phoneBrand": "Google",
-        "phoneModel": "Pixel 7 Pro",
+        "timeZone": c.get("time_zone") or os.environ.get("TZ") or "Asia/Jakarta",
+        "phoneBrand": dev["phoneBrand"],
+        "phoneModel": dev["phoneModel"],
         "md5": "",
         "verifyCode": "",
         "dateTime": now_ms(),

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="id" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>OpenLinko: dashboard CarLinko untuk Jaecoo, Omoda dan Chery</title>
+<meta name="description" content="Dashboard gratis dan open source untuk mobil di aplikasi CarLinko: Jaecoo J5 EV, Omoda E5, Chery Tiggo 7 dan 8 PHEV. Trip, konsumsi energi, biaya charging, ban dan kontrol jarak jauh, jalan di PC sendiri atau HP Android bekas.">
+<link rel="canonical" href="https://jaylabb.my.id/openlinko/id/">
+<link rel="alternate" hreflang="en" href="https://jaylabb.my.id/openlinko/">
+<link rel="alternate" hreflang="id" href="https://jaylabb.my.id/openlinko/id/">
+<link rel="alternate" hreflang="x-default" href="https://jaylabb.my.id/openlinko/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenLinko">
+<meta property="og:locale" content="id_ID">
+<meta property="og:title" content="OpenLinko: mobil CarLinko kamu, terbaca semua">
+<meta property="og:description" content="Trip, biaya charging, konsumsi energi, ban dan kontrol jarak jauh untuk Jaecoo, Omoda dan Chery. Self-hosted dan open source.">
+<meta property="og:url" content="https://jaylabb.my.id/openlinko/id/">
+<meta property="og:image" content="https://jaylabb.my.id/openlinko/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0c0d0b">
+<link rel="icon" href="../img/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../assets/site.css?v=1e8e11be">
+<link rel="preload" as="image" href="../img/j5.webp" imagesrcset="../img/j5-640.webp 640w, ../img/j5.webp 1006w" imagesizes="(max-width:760px) 100vw, 980px">
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "SoftwareApplication", "name": "OpenLinko", "alternateName": ["J5 EV Dashboard", "CarLinko dashboard"], "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, Linux, macOS, Android (Termux), Docker", "description": "Dashboard gratis dan open source untuk mobil di aplikasi CarLinko: Jaecoo J5 EV, Omoda E5, Chery Tiggo 7 dan 8 PHEV. Trip, konsumsi energi, biaya charging, ban dan kontrol jarak jauh, jalan di PC sendiri atau HP Android bekas.", "url": "https://jaylabb.my.id/openlinko/id/", "downloadUrl": "https://github.com/GodrezJr2/openlinko", "codeRepository": "https://github.com/GodrezJr2/openlinko", "license": "https://opensource.org/licenses/MIT", "image": "https://jaylabb.my.id/openlinko/img/og.jpg", "inLanguage": "id", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "author": {"@type": "Person", "name": "Jayson Christopher Lim", "url": "https://jaylabb.my.id/"}}, {"@type": "FAQPage", "inLanguage": "id", "mainEntity": [{"@type": "Question", "name": "Ada dashboard untuk Jaecoo J5 EV?", "acceptedAnswer": {"@type": "Answer", "text": "Ada. OpenLinko dibuat di Jaecoo J5 EV. Ia membaca data yang sama dengan aplikasi CarLinko lalu menyimpan riwayatnya: trip, konsumsi energi bersih setelah regen, sesi charging beserta biayanya, ban dan aki 12 V."}}, {"@type": "Question", "name": "Bisa untuk Omoda, Chery Tiggo atau Exeed?", "acceptedAnswer": {"@type": "Answer", "text": "Sudah terbukti di Omoda E5, Chery Tiggo 7 PHEV dan Chery Tiggo 8 PHEV selain J5. Mobil Chery Group lain di aplikasi CarLinko kemungkinan besar jalan, karena susunan byte-nya identik di keempatnya."}}, {"@type": "Question", "name": "Apakah ini aplikasi resmi CarLinko?", "acceptedAnswer": {"@type": "Answer", "text": "Bukan. Ini proyek open source independen, tidak berafiliasi dengan Jaecoo, Omoda, Chery atau CarLinko. Ia bicara ke cloud yang sama dengan aplikasi resmi, pakai login kamu sendiri."}}, {"@type": "Question", "name": "Perlu server?", "acceptedAnswer": {"@type": "Answer", "text": "Perlu satu perangkat yang nyala terus: PC Windows, Raspberry Pi, VPS kecil, atau HP Android bekas yang dicolok charger. HP yang kamu bawa tinggal buka di browser."}}, {"@type": "Question", "name": "Bisa di iPhone?", "acceptedAnswer": {"@type": "Answer", "text": "Bisa, sebagai layar untuk melihat: buka di Safari lalu tambahkan ke layar utama. iOS nggak bisa menjalankan bagian yang nyala terus, jadi itu jalan di PC, server atau HP Android bekas."}}, {"@type": "Question", "name": "Bisa disambung ke Home Assistant?", "acceptedAnswer": {"@type": "Answer", "text": "Bisa, lewat REST API-nya. Integrasi Home Assistant terpisah untuk mobil CarLinko juga tercantum di README."}}, {"@type": "Question", "name": "Bayar?", "acceptedAnswer": {"@type": "Answer", "text": "Gratis. Lisensi MIT dan jalan di perangkat yang sudah kamu punya."}}]}]}</script>
+<script type="application/json" id="ol-cfg">{"names": {"battery": "Baterai", "range": "Jarak tempuh", "volt": "Aki 12 V", "odo": "Odometer", "cons": "Konsumsi energi", "lock": "Pintu", "tyres": "Ban (TPMS tidak langsung)"}, "locked": "Terkunci", "copy": "Salin", "copied": "Tersalin"}</script>
+</head>
+<body>
+<a class="skip" href="#main">Langsung ke isi</a>
+<header class="bar"><div class="wrap">
+  <a class="logo" href="./"><i aria-hidden="true"></i>OpenLinko</a>
+  <nav aria-label="Site">
+    <a class="opt" href="#cars">Mobil</a><a class="opt" href="#install">Pasang</a><a class="opt" href="#faq">FAQ</a>
+    <a href="https://jaylabb.my.id/openlinko/" hreflang="en" lang="en">English</a>
+    <a class="gh" href="https://github.com/GodrezJr2/openlinko">GitHub</a>
+  </nav>
+</div></header>
+
+<main id="main">
+<div class="hero">
+  <div class="wrap grid">
+    <div>
+      <p class="over">Open source · untuk mobil CarLinko</p>
+      <h1>Mobil CarLinko kamu, <em>terbaca semua.</em></h1>
+      <p class="lede">Dashboard gratis untuk <b>Jaecoo, Omoda dan Chery</b>. Membaca akun CarLinko kamu sendiri dan menyimpan semua yang dibuang aplikasinya: trip, konsumsi energi asli, biaya charging, ban dan kontrol jarak jauh.</p>
+      <div class="cta">
+        <a class="btn volt" href="https://github.com/GodrezJr2/openlinko"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Ambil di GitHub</a>
+        <a class="btn ghost" href="#install">Pasang dalam 2 menit</a>
+      </div>
+      <p class="note">Gratis, lisensi MIT. Jalan di PC atau HP Android bekas. Tidak berafiliasi dengan Chery Group atau CarLinko.</p>
+    </div>
+    <div class="dump" aria-label="Frame status · 73 byte">
+      <div class="head"><span>Frame status · 73 byte</span><span>Terbaca</span></div>
+      <div class="hex"></div>
+      <div class="read" aria-live="polite"><span class="k"></span><span class="rule"></span><span class="v"></span></div>
+      <div class="foot">Contoh frame. Offset-nya asli, sudah dipetakan di empat mobil.</div>
+    </div>
+  </div>
+  <div class="seam">
+    <div class="car"><img src="../img/j5.webp" srcset="../img/j5-640.webp 640w, ../img/j5.webp 1006w" sizes="(max-width:760px) 100vw, 980px" width="1006" height="420" alt="Jaecoo J5 EV"></div>
+    <ul class="tags" aria-hidden="true">
+      <li class="t1"><span>BATERAI · b28</span>72 %</li>
+      <li class="t2"><span>JARAK · b29–30</span>318 km</li>
+      <li class="t3"><span>AKI 12 V · b12–13</span>13.84 V</li>
+      <li class="t4"><span>PINTU · b3</span>Terkunci</li>
+    </ul>
+  </div>
+</div>
+
+<div class="light">
+<section class="s first" id="how"><div class="wrap">
+  <p class="over">Yang kamu dapat</p>
+  <h2 class="rv">Semua yang dilupakan aplikasinya, tersimpan.</h2>
+  <p class="sub rv">Aplikasi CarLinko cuma menunjukkan kondisi mobil saat ini. OpenLinko mencatat setiap update yang dikirim mobil, jadi angkanya terkumpul dari hari ke hari.</p>
+  <div class="rail">
+<figure class="rv"><div class="ph"><img src="../img/v2-home-light.jpg" width="585" height="1266" loading="lazy" alt="Layar utama: jarak 318 km, baterai 72%, tombol cepat"></div><figcaption><b>Beranda</b><span>Jarak, baterai, AC, pintu</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="../img/v2-energy-light.jpg" width="585" height="1266" loading="lazy" alt="Energi: kWh per 100 km tiap hari dibanding rating WLTP"></div><figcaption><b>Energi</b><span>kWh/100 km per hari, bersih setelah regen</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="../img/v2-dist-light.jpg" width="585" height="1266" loading="lazy" alt="Kalender jarak dengan km, energi dan biaya per hari"></div><figcaption><b>Kalender</b><span>Jarak dan biaya tiap hari</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="../img/v2-chg-light.jpg" width="585" height="1266" loading="lazy" alt="Charging: kurva daya sesi terakhir, kWh dan biaya"></div><figcaption><b>Charging</b><span>Tiap sesi dengan kWh dan biaya</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="../img/v2-doors-light.jpg" width="585" height="1266" loading="lazy" alt="Pintu dan jendela di mobil 3D dengan kontrol jarak jauh"></div><figcaption><b>Pintu</b><span>Mobil 3D dengan kontrol jarak jauh</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="../img/v2-plan-light.jpg" width="585" height="1266" loading="lazy" alt="Kalkulator charging: waktu, kWh dan biaya ke persen target"></div><figcaption><b>Rencana charging</b><span>Waktu dan biaya ke persen target</span></figcaption></figure>
+  </div>
+</div></section>
+
+<section class="s"><div class="wrap">
+  <p class="over">Fitur</p>
+  <h2 class="rv">Dibuat di mobil asli, dicek dengan struk asli.</h2>
+  <ol class="feats">
+<li class="rv"><h3>Konsumsi energi asli</h3><p>kWh/100 km per hari, bersih setelah regen, di samping angka head unit dan rating WLTP.</p></li>
+<li class="rv"><h3>Biaya charging yang cocok dengan struk</h3><p>Tiap sesi lengkap dengan kWh, kurva daya dan biaya. Di mobil referensi cocok dengan struk PLN Mobile 99,6 sampai 99,9%.</p></li>
+<li class="rv"><h3>Trip dan kalender berkendara</h3><p>Jarak, energi dan biaya tiap hari, dengan trip yang dideteksi dari odometer.</p></li>
+<li class="rv"><h3>Kontrol jarak jauh</h3><p>Kunci, AC dengan suhu, jendela, bagasi dan cari mobil, dikirim seperti aplikasi resminya. Lewat cloud, tanpa Bluetooth.</p></li>
+<li class="rv"><h3>Ban, aki 12 V dan baterai</h3><p>Tekanan ban di mobil dengan TPMS langsung, tegangan aki 12 V, dan kebiasaan charging untuk baterai LFP.</p></li>
+<li class="rv"><h3>Add-on head unit</h3><p>Climate Gesture untuk J5: atur kipas dan suhu dengan geser dua jari di layar mobil.</p></li>
+  </ol>
+</div></section>
+
+<section class="s" id="cars"><div class="wrap">
+  <p class="over">Mobil yang didukung</p>
+  <h2 class="rv">Empat mobil, tiga merek, empat negara.</h2>
+  <p class="sub rv">Susunan byte-nya identik di semua mobil yang dicoba pemiliknya, jadi kelihatannya ini format platform CarLinko, bukan per model.</p>
+  <div class="cars">
+<div class="carrow rv"><span class="n">Jaecoo J5 EV</span><span class="m">Listrik</span><span class="m">Indonesia</span><span class="st">Mobil referensi</span></div>
+<div class="carrow rv"><span class="n">Omoda E5</span><span class="m">Listrik</span><span class="m">Uruguay</span><span class="st">Terkonfirmasi</span></div>
+<div class="carrow rv"><span class="n">Chery Tiggo 7 PHEV</span><span class="m">Plug-in hybrid</span><span class="m">Malaysia</span><span class="st">Terkonfirmasi</span></div>
+<div class="carrow rv"><span class="n">Chery Tiggo 8 PHEV</span><span class="m">Plug-in hybrid</span><span class="m">Afrika Selatan</span><span class="st">Terkonfirmasi</span></div>
+    <a class="carrow more rv" href="https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml"><span class="n">Jaecoo, Omoda, Chery atau Exeed lain</span><span class="m">Mobil CarLinko apa saja</span><span class="m"></span><span class="st">Tambahkan mobilmu →</span></a>
+  </div>
+  <p class="carnote">Belum ada di daftar? Dashboard punya halaman <b>Report my car</b> yang menyalin laporan tanpa plat, VIN dan id akun, siap untuk issue <a href="https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml">Add my car</a>.</p>
+</div></section>
+
+<section class="s" id="install"><div class="wrap">
+  <p class="over">Pasang</p>
+  <h2 class="rv">Jalan di perangkat yang sudah kamu punya.</h2>
+  <p class="sub rv">Satu perangkat nyala terus untuk mencatat data mobil. HP kamu, Android atau iPhone, tinggal buka dashboard di browser.</p>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tb-win" aria-controls="p-win" aria-selected="true" data-os="win">PC Windows</button>
+    <button role="tab" id="tb-and" aria-controls="p-and" aria-selected="false" tabindex="-1" data-os="android">HP Android bekas</button>
+    <button role="tab" id="tb-lin" aria-controls="p-lin" aria-selected="false" tabindex="-1" data-os="linux">Linux · Pi · VPS</button>
+  </div>
+  <div class="panel" id="p-win" role="tabpanel" aria-labelledby="tb-win"><div class="term">
+    <div class="tb"><i></i><span>PowerShell</span><button class="copy" type="button">Salin</button></div>
+    <pre><span class="c"># setelah download dan ekstrak repo</span>
+<span class="p">&gt;</span> <span class="cmd">.\start.bat</span></pre>
+    <p class="how"><b>Tanpa coding.</b> Download repo sebagai ZIP, ekstrak, klik dua kali <code>start.bat</code>. Python dipasang otomatis kalau belum ada, lalu dashboard terbuka. Login pakai akun CarLinko. <a class="zip" href="https://github.com/GodrezJr2/openlinko/archive/refs/heads/main.zip">ZIP ↓</a></p>
+  </div></div>
+  <div class="panel" id="p-and" role="tabpanel" aria-labelledby="tb-and" hidden><div class="term">
+    <div class="tb"><i></i><span>Termux</span><button class="copy" type="button">Salin</button></div>
+    <pre><span class="p">$</span> <span class="cmd">pkg install -y git</span>
+<span class="p">$</span> <span class="cmd">git clone https://github.com/GodrezJr2/openlinko ~/openlinko</span>
+<span class="p">$</span> <span class="cmd">bash ~/openlinko/tools/termux-setup.sh</span></pre>
+    <p class="how">Pasang <b>Termux</b> dan <b>Termux:Boot</b> dari F-Droid, tempel tiga baris ini, biarkan HP dicolok charger. Nyala lagi sendiri setelah restart.</p>
+  </div></div>
+  <div class="panel" id="p-lin" role="tabpanel" aria-labelledby="tb-lin" hidden><div class="term">
+    <div class="tb"><i></i><span>bash</span><button class="copy" type="button">Salin</button></div>
+    <pre><span class="p">$</span> <span class="cmd">git clone https://github.com/GodrezJr2/openlinko</span>
+<span class="p">$</span> <span class="cmd">cd openlinko &amp;&amp; ./tools/install.sh --tailscale</span></pre>
+    <p class="how">Satu skrip memasang service-nya. <code>--tailscale</code> supaya bisa dibuka dari mana saja tanpa dibuka ke internet.</p>
+  </div></div>
+  <p class="alt">Docker dan Home Assistant ada di <a href="https://github.com/GodrezJr2/openlinko/blob/main/README.id.md">README</a>.</p>
+</div></section>
+</div>
+
+<section class="band"><div class="wrap">
+  <p class="over">Privasi</p>
+  <h2 class="rv">Akunmu. Perangkatmu. Nggak ada cloud OpenLinko.</h2>
+  <ul class="pts">
+<li><b>Tetap lokal</b><span>Password, token, VIN dan plat disimpan di file lokal yang nggak pernah di-commit.</span></li>
+<li><b>Satu pemilik per instalasi</b><span>Bukan layanan hosting dan nggak pernah menyimpan akun orang lain.</span></li>
+<li><b>Aman buat akunmu</b><span>Percobaan login dibatasi, jadi password salah nggak membanjiri CarLinko.</span></li>
+<li><b>Aplikasi di HP tetap login</b><span>CarLinko cuma izinkan satu sesi per akun. Akun kedua yang ditautkan ke mobil mencegah saling tendang.</span></li>
+  </ul>
+</div></section>
+
+<div class="light">
+<section class="s" id="faq"><div class="wrap">
+  <p class="over">FAQ</p>
+  <h2 class="rv">Yang sering ditanya pemilik.</h2>
+  <div class="faq">
+<details open><summary>Ada dashboard untuk Jaecoo J5 EV?</summary><p>Ada. OpenLinko dibuat di Jaecoo J5 EV. Ia membaca data yang sama dengan aplikasi CarLinko lalu menyimpan riwayatnya: trip, konsumsi energi bersih setelah regen, sesi charging beserta biayanya, ban dan aki 12 V.</p></details>
+<details><summary>Bisa untuk Omoda, Chery Tiggo atau Exeed?</summary><p>Sudah terbukti di Omoda E5, Chery Tiggo 7 PHEV dan Chery Tiggo 8 PHEV selain J5. Mobil Chery Group lain di aplikasi CarLinko kemungkinan besar jalan, karena susunan byte-nya identik di keempatnya.</p></details>
+<details><summary>Apakah ini aplikasi resmi CarLinko?</summary><p>Bukan. Ini proyek open source independen, tidak berafiliasi dengan Jaecoo, Omoda, Chery atau CarLinko. Ia bicara ke cloud yang sama dengan aplikasi resmi, pakai login kamu sendiri.</p></details>
+<details><summary>Perlu server?</summary><p>Perlu satu perangkat yang nyala terus: PC Windows, Raspberry Pi, VPS kecil, atau HP Android bekas yang dicolok charger. HP yang kamu bawa tinggal buka di browser.</p></details>
+<details><summary>Bisa di iPhone?</summary><p>Bisa, sebagai layar untuk melihat: buka di Safari lalu tambahkan ke layar utama. iOS nggak bisa menjalankan bagian yang nyala terus, jadi itu jalan di PC, server atau HP Android bekas.</p></details>
+<details><summary>Bisa disambung ke Home Assistant?</summary><p>Bisa, lewat REST API-nya. Integrasi Home Assistant terpisah untuk mobil CarLinko juga tercantum di README.</p></details>
+<details><summary>Bayar?</summary><p>Gratis. Lisensi MIT dan jalan di perangkat yang sudah kamu punya.</p></details>
+  </div>
+</div></section>
+</div>
+</main>
+
+<div class="end"><div class="wrap">
+  <p class="big rv" aria-hidden="true">Baca<br>mobilmu <em>sendiri.</em></p>
+  <div class="cta">
+    <a class="btn volt" href="https://github.com/GodrezJr2/openlinko"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Ambil di GitHub</a>
+    <a class="btn ghost" href="#install">Pasang dalam 2 menit</a>
+  </div>
+  <footer>
+    <span>OpenLinko, dulu J5 EV Dashboard. Lisensi MIT. Dibuat oleh <a href="https://jaylabb.my.id/">Jayson</a>.</span>
+    <span><a href="https://github.com/GodrezJr2/openlinko">GitHub</a> · <a href="https://jaylabb.my.id/openlinko/" hreflang="en">English</a></span>
+    <p>Jaecoo, Omoda, Chery, Exeed dan CarLinko adalah merek dagang pemiliknya. Proyek ini tidak berafiliasi dengan mereka.</p>
+  </footer>
+</div></div>
+<script src="../assets/site.js?v=4c18ac65" defer></script>
+</body>
+</html>

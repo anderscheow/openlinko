@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>OpenLinko: CarLinko dashboard for Jaecoo, Omoda and Chery cars</title>
+<meta name="description" content="A free, open-source dashboard for cars on the CarLinko app: Jaecoo J5 EV, Omoda E5, Chery Tiggo 7 and 8 PHEV. Trips, energy use, charging cost, tyres and remote control, self-hosted on your PC or an old Android phone.">
+<link rel="canonical" href="https://jaylabb.my.id/openlinko/">
+<link rel="alternate" hreflang="en" href="https://jaylabb.my.id/openlinko/">
+<link rel="alternate" hreflang="id" href="https://jaylabb.my.id/openlinko/id/">
+<link rel="alternate" hreflang="x-default" href="https://jaylabb.my.id/openlinko/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenLinko">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="OpenLinko: your CarLinko car, fully decoded">
+<meta property="og:description" content="Trips, charging cost, energy use, tyres and remote control for Jaecoo, Omoda and Chery. Self-hosted and open source.">
+<meta property="og:url" content="https://jaylabb.my.id/openlinko/">
+<meta property="og:image" content="https://jaylabb.my.id/openlinko/img/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0c0d0b">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/site.css?v=1e8e11be">
+<link rel="preload" as="image" href="img/j5.webp" imagesrcset="img/j5-640.webp 640w, img/j5.webp 1006w" imagesizes="(max-width:760px) 100vw, 980px">
+<script type="application/ld+json">{"@context": "https://schema.org", "@graph": [{"@type": "SoftwareApplication", "name": "OpenLinko", "alternateName": ["J5 EV Dashboard", "CarLinko dashboard"], "applicationCategory": "UtilitiesApplication", "operatingSystem": "Windows, Linux, macOS, Android (Termux), Docker", "description": "A free, open-source dashboard for cars on the CarLinko app: Jaecoo J5 EV, Omoda E5, Chery Tiggo 7 and 8 PHEV. Trips, energy use, charging cost, tyres and remote control, self-hosted on your PC or an old Android phone.", "url": "https://jaylabb.my.id/openlinko/", "downloadUrl": "https://github.com/GodrezJr2/openlinko", "codeRepository": "https://github.com/GodrezJr2/openlinko", "license": "https://opensource.org/licenses/MIT", "image": "https://jaylabb.my.id/openlinko/img/og.jpg", "inLanguage": "en", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "author": {"@type": "Person", "name": "Jayson Christopher Lim", "url": "https://jaylabb.my.id/"}}, {"@type": "FAQPage", "inLanguage": "en", "mainEntity": [{"@type": "Question", "name": "Is there a dashboard for my Jaecoo J5 EV?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. OpenLinko was built on a Jaecoo J5 EV. It reads the same data the CarLinko app shows and keeps the history: trips, energy use net of regen, charging sessions with cost, tyres and 12 V health."}}, {"@type": "Question", "name": "Does it work with Omoda, Chery Tiggo or Exeed?", "acceptedAnswer": {"@type": "Answer", "text": "It is confirmed on an Omoda E5, a Chery Tiggo 7 PHEV and a Chery Tiggo 8 PHEV as well as the J5. Other Chery Group cars on the CarLinko app very likely work, since the byte layout was identical on all four."}}, {"@type": "Question", "name": "Is it an official CarLinko app?", "acceptedAnswer": {"@type": "Answer", "text": "No. It is an independent open source project, not affiliated with Jaecoo, Omoda, Chery or CarLinko. It talks to the same cloud the official app uses, with your own login."}}, {"@type": "Question", "name": "Do I need a server?", "acceptedAnswer": {"@type": "Answer", "text": "You need one thing that stays on: a Windows PC, a Raspberry Pi, a small VPS, or a spare Android phone on the charger. The phone you carry just opens it in the browser."}}, {"@type": "Question", "name": "Does it work on iPhone?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, as the screen you look at: open it in Safari and add it to the home screen. iOS can't run the always on part, so that runs on a PC, server or spare Android phone."}}, {"@type": "Question", "name": "Does it work with Home Assistant?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, through its REST API. Separate Home Assistant integrations for CarLinko cars are also listed in the README."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "Nothing. It is MIT licensed and runs on hardware you already have."}}]}]}</script>
+<script type="application/json" id="ol-cfg">{"names": {"battery": "Battery", "range": "Range", "volt": "12 V battery", "odo": "Odometer", "cons": "Energy use", "lock": "Doors", "tyres": "Tyres (indirect TPMS)"}, "locked": "Locked", "copy": "Copy", "copied": "Copied"}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar"><div class="wrap">
+  <a class="logo" href="./"><i aria-hidden="true"></i>OpenLinko</a>
+  <nav aria-label="Site">
+    <a class="opt" href="#cars">Cars</a><a class="opt" href="#install">Install</a><a class="opt" href="#faq">FAQ</a>
+    <a href="https://jaylabb.my.id/openlinko/id/" hreflang="id" lang="id">Bahasa Indonesia</a>
+    <a class="gh" href="https://github.com/GodrezJr2/openlinko">GitHub</a>
+  </nav>
+</div></header>
+
+<main id="main">
+<div class="hero">
+  <div class="wrap grid">
+    <div>
+      <p class="over">Open source · for CarLinko cars</p>
+      <h1>Your CarLinko car, <em>fully decoded.</em></h1>
+      <p class="lede">A free dashboard for <b>Jaecoo, Omoda and Chery</b>. It reads your own CarLinko account and keeps everything the app throws away: trips, real energy use, charging cost, tyres and remote control.</p>
+      <div class="cta">
+        <a class="btn volt" href="https://github.com/GodrezJr2/openlinko"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Get it on GitHub</a>
+        <a class="btn ghost" href="#install">Install in 2 minutes</a>
+      </div>
+      <p class="note">Free, MIT license. Runs on your PC or an old Android phone. Not affiliated with Chery Group or CarLinko.</p>
+    </div>
+    <div class="dump" aria-label="Status frame · 73 bytes">
+      <div class="head"><span>Status frame · 73 bytes</span><span>Decoded</span></div>
+      <div class="hex"></div>
+      <div class="read" aria-live="polite"><span class="k"></span><span class="rule"></span><span class="v"></span></div>
+      <div class="foot">Sample frame. Offsets are the real ones, mapped on four cars.</div>
+    </div>
+  </div>
+  <div class="seam">
+    <div class="car"><img src="img/j5.webp" srcset="img/j5-640.webp 640w, img/j5.webp 1006w" sizes="(max-width:760px) 100vw, 980px" width="1006" height="420" alt="Jaecoo J5 EV"></div>
+    <ul class="tags" aria-hidden="true">
+      <li class="t1"><span>BATTERY · b28</span>72 %</li>
+      <li class="t2"><span>RANGE · b29–30</span>318 km</li>
+      <li class="t3"><span>12 V · b12–13</span>13.84 V</li>
+      <li class="t4"><span>DOORS · b3</span>Locked</li>
+    </ul>
+  </div>
+</div>
+
+<div class="light">
+<section class="s first" id="how"><div class="wrap">
+  <p class="over">What you get</p>
+  <h2 class="rv">Everything the app forgets, kept.</h2>
+  <p class="sub rv">The CarLinko app shows your car right now and little else. OpenLinko logs every update the car sends, so the numbers add up over days and months.</p>
+  <div class="rail">
+<figure class="rv"><div class="ph"><img src="img/v2-home-light.jpg" width="585" height="1266" loading="lazy" alt="Home screen: 318 km range, 72% battery, quick actions"></div><figcaption><b>Home</b><span>Range, battery, climate, doors</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="img/v2-energy-light.jpg" width="585" height="1266" loading="lazy" alt="Energy: kWh per 100 km for each day against the WLTP rating"></div><figcaption><b>Energy</b><span>kWh/100 km per day, net of regen</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="img/v2-dist-light.jpg" width="585" height="1266" loading="lazy" alt="Distance calendar with km, energy and cost per day"></div><figcaption><b>Calendar</b><span>Distance and cost for every day</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="img/v2-chg-light.jpg" width="585" height="1266" loading="lazy" alt="Charging: last session power curve, kWh and cost"></div><figcaption><b>Charging</b><span>Each session with kWh and cost</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="img/v2-doors-light.jpg" width="585" height="1266" loading="lazy" alt="Doors and windows on a 3D car with remote controls"></div><figcaption><b>Doors</b><span>3D car with remote controls</span></figcaption></figure>
+<figure class="rv"><div class="ph"><img src="img/v2-plan-light.jpg" width="585" height="1266" loading="lazy" alt="Charge calculator: time, kWh and cost to a target percentage"></div><figcaption><b>Charge plan</b><span>Time and cost to a target %</span></figcaption></figure>
+  </div>
+</div></section>
+
+<section class="s"><div class="wrap">
+  <p class="over">Features</p>
+  <h2 class="rv">Built on a real car, checked against real receipts.</h2>
+  <ol class="feats">
+<li class="rv"><h3>Real energy use</h3><p>kWh/100 km per day, net of regen, beside the head unit's own figure and the WLTP rating.</p></li>
+<li class="rv"><h3>Charging cost that matches the receipt</h3><p>Every session with kWh, power curve and cost. On the reference car it matches the charger receipts to 99.6 to 99.9%.</p></li>
+<li class="rv"><h3>Trips and a driving calendar</h3><p>Distance, energy and cost for each day, with trips found from the odometer.</p></li>
+<li class="rv"><h3>Remote control</h3><p>Lock, A/C with temperature, windows, tailgate and find car, sent the way the official app sends them. Cloud only, no Bluetooth.</p></li>
+<li class="rv"><h3>Tyres, 12 V and battery health</h3><p>Tyre pressures on cars with direct TPMS, the 12 V voltage, and charge habits for LFP packs.</p></li>
+<li class="rv"><h3>Head unit add-on</h3><p>Climate Gesture for the J5: change fan and temperature with a two finger swipe on the car's own screen.</p></li>
+  </ol>
+</div></section>
+
+<section class="s" id="cars"><div class="wrap">
+  <p class="over">Supported cars</p>
+  <h2 class="rv">Four cars, three brands, four countries.</h2>
+  <p class="sub rv">The byte layout held identical on every car owners tried, so it looks like a CarLinko platform layout, not a per model one.</p>
+  <div class="cars">
+<div class="carrow rv"><span class="n">Jaecoo J5 EV</span><span class="m">Electric</span><span class="m">Indonesia</span><span class="st">Reference car</span></div>
+<div class="carrow rv"><span class="n">Omoda E5</span><span class="m">Electric</span><span class="m">Uruguay</span><span class="st">Confirmed</span></div>
+<div class="carrow rv"><span class="n">Chery Tiggo 7 PHEV</span><span class="m">Plug-in hybrid</span><span class="m">Malaysia</span><span class="st">Confirmed</span></div>
+<div class="carrow rv"><span class="n">Chery Tiggo 8 PHEV</span><span class="m">Plug-in hybrid</span><span class="m">South Africa</span><span class="st">Confirmed</span></div>
+    <a class="carrow more rv" href="https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml"><span class="n">Another Jaecoo, Omoda, Chery or Exeed</span><span class="m">Any CarLinko car</span><span class="m"></span><span class="st">Add your car →</span></a>
+  </div>
+  <p class="carnote">Not listed? The dashboard has a <b>Report my car</b> page that copies a report with the plate, VIN and account ids removed, ready for an <a href="https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml">Add my car</a> issue.</p>
+</div></section>
+
+<section class="s" id="install"><div class="wrap">
+  <p class="over">Install</p>
+  <h2 class="rv">Runs on something you already own.</h2>
+  <p class="sub rv">One machine stays on and logs the car. Your phone, Android or iPhone, opens the dashboard in the browser.</p>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tb-win" aria-controls="p-win" aria-selected="true" data-os="win">Windows PC</button>
+    <button role="tab" id="tb-and" aria-controls="p-and" aria-selected="false" tabindex="-1" data-os="android">Old Android phone</button>
+    <button role="tab" id="tb-lin" aria-controls="p-lin" aria-selected="false" tabindex="-1" data-os="linux">Linux · Pi · VPS</button>
+  </div>
+  <div class="panel" id="p-win" role="tabpanel" aria-labelledby="tb-win"><div class="term">
+    <div class="tb"><i></i><span>PowerShell</span><button class="copy" type="button">Copy</button></div>
+    <pre><span class="c"># after downloading and unzipping the repo</span>
+<span class="p">&gt;</span> <span class="cmd">.\start.bat</span></pre>
+    <p class="how"><b>No coding.</b> Download the repo as a ZIP, unzip it, double click <code>start.bat</code>. It installs Python if needed and opens the dashboard. Sign in with your CarLinko account. <a class="zip" href="https://github.com/GodrezJr2/openlinko/archive/refs/heads/main.zip">ZIP ↓</a></p>
+  </div></div>
+  <div class="panel" id="p-and" role="tabpanel" aria-labelledby="tb-and" hidden><div class="term">
+    <div class="tb"><i></i><span>Termux</span><button class="copy" type="button">Copy</button></div>
+    <pre><span class="p">$</span> <span class="cmd">pkg install -y git</span>
+<span class="p">$</span> <span class="cmd">git clone https://github.com/GodrezJr2/openlinko ~/openlinko</span>
+<span class="p">$</span> <span class="cmd">bash ~/openlinko/tools/termux-setup.sh</span></pre>
+    <p class="how">Install <b>Termux</b> and <b>Termux:Boot</b> from F-Droid, paste these three lines, leave the phone on the charger. It starts again after a reboot.</p>
+  </div></div>
+  <div class="panel" id="p-lin" role="tabpanel" aria-labelledby="tb-lin" hidden><div class="term">
+    <div class="tb"><i></i><span>bash</span><button class="copy" type="button">Copy</button></div>
+    <pre><span class="p">$</span> <span class="cmd">git clone https://github.com/GodrezJr2/openlinko</span>
+<span class="p">$</span> <span class="cmd">cd openlinko &amp;&amp; ./tools/install.sh --tailscale</span></pre>
+    <p class="how">One script sets up the services. <code>--tailscale</code> lets you open it from anywhere without exposing it to the internet.</p>
+  </div></div>
+  <p class="alt">Docker and Home Assistant setups are in the <a href="https://github.com/GodrezJr2/openlinko#setup">README</a>.</p>
+</div></section>
+</div>
+
+<section class="band"><div class="wrap">
+  <p class="over">Privacy</p>
+  <h2 class="rv">Your account. Your machine. No OpenLinko cloud.</h2>
+  <ul class="pts">
+<li><b>Stays local</b><span>Password, token, VIN and plate live in a local file that is never committed.</span></li>
+<li><b>One owner per install</b><span>It is not a hosted service and never stores anyone else's account.</span></li>
+<li><b>Gentle on your account</b><span>Login retries are rate limited, so a wrong password can't hammer CarLinko.</span></li>
+<li><b>Keeps your phone app signed in</b><span>CarLinko allows one session per account. A second account linked to your car avoids the tug of war.</span></li>
+  </ul>
+</div></section>
+
+<div class="light">
+<section class="s" id="faq"><div class="wrap">
+  <p class="over">FAQ</p>
+  <h2 class="rv">Questions owners ask.</h2>
+  <div class="faq">
+<details open><summary>Is there a dashboard for my Jaecoo J5 EV?</summary><p>Yes. OpenLinko was built on a Jaecoo J5 EV. It reads the same data the CarLinko app shows and keeps the history: trips, energy use net of regen, charging sessions with cost, tyres and 12 V health.</p></details>
+<details><summary>Does it work with Omoda, Chery Tiggo or Exeed?</summary><p>It is confirmed on an Omoda E5, a Chery Tiggo 7 PHEV and a Chery Tiggo 8 PHEV as well as the J5. Other Chery Group cars on the CarLinko app very likely work, since the byte layout was identical on all four.</p></details>
+<details><summary>Is it an official CarLinko app?</summary><p>No. It is an independent open source project, not affiliated with Jaecoo, Omoda, Chery or CarLinko. It talks to the same cloud the official app uses, with your own login.</p></details>
+<details><summary>Do I need a server?</summary><p>You need one thing that stays on: a Windows PC, a Raspberry Pi, a small VPS, or a spare Android phone on the charger. The phone you carry just opens it in the browser.</p></details>
+<details><summary>Does it work on iPhone?</summary><p>Yes, as the screen you look at: open it in Safari and add it to the home screen. iOS can't run the always on part, so that runs on a PC, server or spare Android phone.</p></details>
+<details><summary>Does it work with Home Assistant?</summary><p>Yes, through its REST API. Separate Home Assistant integrations for CarLinko cars are also listed in the README.</p></details>
+<details><summary>How much does it cost?</summary><p>Nothing. It is MIT licensed and runs on hardware you already have.</p></details>
+  </div>
+</div></section>
+</div>
+</main>
+
+<div class="end"><div class="wrap">
+  <p class="big rv" aria-hidden="true">Read your<br>own <em>car.</em></p>
+  <div class="cta">
+    <a class="btn volt" href="https://github.com/GodrezJr2/openlinko"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.39-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>Get it on GitHub</a>
+    <a class="btn ghost" href="#install">Install in 2 minutes</a>
+  </div>
+  <footer>
+    <span>OpenLinko, formerly J5 EV Dashboard. MIT license. Built by <a href="https://jaylabb.my.id/">Jayson</a>.</span>
+    <span><a href="https://github.com/GodrezJr2/openlinko">GitHub</a> · <a href="https://jaylabb.my.id/openlinko/id/" hreflang="id">Bahasa Indonesia</a></span>
+    <p>Jaecoo, Omoda, Chery, Exeed and CarLinko are trademarks of their owners. This project is not affiliated with them.</p>
+  </footer>
+</div></div>
+<script src="assets/site.js?v=4c18ac65" defer></script>
+</body>
+</html>

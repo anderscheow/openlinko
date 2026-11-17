@@ -1,6 +1,6 @@
 """Stage 1b of the car model: turn an open image-to-3D shell into a watertight solid, keeping the surface detail.
 
-tools/split_car.py cuts panels with mesh booleans, which need a closed mesh. Hunyuan3D marching-cubes output is closed;
+research/car-model/split_car.py cuts panels with mesh booleans, which need a closed mesh. Hunyuan3D marching-cubes output is closed;
 TRELLIS.2 output is an open shell (holes under the car and in the arches) and hole filling does not fix it.
 Here: sample the surface into a voxel grid, call a voxel inside when it lies between surface hits along all three
 axes (works on an open shell), marching cubes, then snap each vertex back onto the source surface (point-to-plane on
@@ -9,11 +9,11 @@ stay where marching cubes put them. A voxel opening in the nose first cuts off t
 fins (the 'whiskers' TRELLIS grows at the bumper corners).
 
 pipeline for the TRELLIS.2 model now in web/car_parts.json:
-  trellis-cli j5.png raw.glb --res 1024 --seed 42 -> tools/car_mirror.py raw.glb trm   (keep trm_L)
-  -> tools/car_prep.py trm_L.glb prep.glb --mid 120000 --taubin 6 -> this script prep.glb solid.glb
-  -> tools/split_car.py solid.glb web/car_parts --body 30000 --door 4000 --gate 5000
+  trellis-cli j5.png raw.glb --res 1024 --seed 42 -> research/car-model/car_mirror.py raw.glb trm   (keep trm_L)
+  -> research/car-model/car_prep.py trm_L.glb prep.glb --mid 120000 --taubin 6 -> this script prep.glb solid.glb
+  -> research/car-model/split_car.py solid.glb web/car_parts --body 30000 --door 4000 --gate 5000
 usage (Hunyuan3D venv: trimesh, numpy, scipy, scikit-image, pymeshlab):
-  python tools/car_solid.py prep.glb solid.glb [--pitch .008 --faces 150000]
+  python research/car-model/car_solid.py prep.glb solid.glb [--pitch .008 --faces 150000]
 """
 import argparse
 import numpy as np, trimesh, pymeshlab

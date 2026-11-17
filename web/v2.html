@@ -120,13 +120,13 @@
   .hbar .hname{flex:1;min-width:0}
   .hname .hm{font-size:17px;font-weight:750;letter-spacing:.01em;display:block;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hname .hs{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11.5px;color:var(--mut)}
+  .hname .hs{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12.5px;color:var(--mut)}
   .hname .hs .dot{width:6px;height:6px;border-radius:50%;background:var(--fnt);flex:none;position:relative}
   .hname .hs .dot.on{background:var(--acc);box-shadow:0 0 0 3px var(--acc-sf)}
-  .rf{width:28px;height:28px;flex:none;margin:-2px -4px 0 0;display:flex;align-items:center;
+  .rf{width:44px;height:44px;flex:none;margin:-10px -12px -8px 0;border-radius:50%;display:flex;align-items:center;
     justify-content:center;color:var(--mut);transition:transform var(--t-fast) var(--eo)}
   .rf:active{transform:scale(.85)}
-  .rf svg{width:15px;height:15px}
+  .rf svg{width:17px;height:17px}
   .rf.spin svg{animation:spin .8s var(--eo)}
   @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -194,7 +194,7 @@
   .qa{position:relative;z-index:2;display:flex;justify-content:center;gap:var(--s5);
     margin:-26px 0 0;padding:0 var(--pad)}
   .qa button{display:flex;flex-direction:column;align-items:center;gap:7px;
-    font-size:10.5px;font-weight:600;color:var(--mut);transition:color var(--t-mid) linear,opacity var(--t-mid) linear}
+    font-size:12px;font-weight:600;color:var(--mut);transition:color var(--t-mid) linear,opacity var(--t-mid) linear}
   .qa .qc{width:54px;height:54px;border-radius:50%;background:var(--card);color:var(--ink);
     display:flex;align-items:center;justify-content:center;box-shadow:var(--sh-1);
     transition:transform var(--t-fast) var(--eo),color var(--t-mid) linear,box-shadow var(--t-mid) linear}
@@ -232,15 +232,38 @@
   .clim{display:flex;flex-direction:column;justify-content:space-between;min-height:132px;cursor:pointer}
   .clim .cr{display:flex;align-items:center;justify-content:space-between}
   .clim .temp{font-size:28px;font-weight:750;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
-  .step{width:32px;height:32px;flex:none;border-radius:50%;background:var(--card-2);color:var(--ink);
+  .step{position:relative;width:34px;height:34px;flex:none;border-radius:50%;background:var(--card-2);color:var(--ink);
     font-size:18px;font-weight:500;line-height:1;display:flex;align-items:center;justify-content:center;
     transition:transform var(--t-fast) var(--eo),background var(--t-mid) linear}
+  .step:after,.clim .cb:after,.pback:after{content:"";position:absolute;inset:-6px}   /* 44px+ hit area, same look */
   .step:active{transform:scale(.88);background:var(--acc-sf)}
   .step:disabled{opacity:.3}
-  .clim .cb{width:38px;height:38px;border-radius:50%;background:var(--card-2);color:var(--mut);
+  .clim .cb{position:relative;width:40px;height:40px;border-radius:50%;background:var(--card-2);color:var(--mut);
     display:flex;align-items:center;justify-content:center;flex:none}
   .clim .cb.on{background:var(--blue-sf);color:var(--blue)}
+  .clim .cb{transition:transform var(--t-fast) var(--eo),background var(--t-mid) linear}
+  .clim .cb:active{transform:scale(.9)}
+  .clim .cb.busy{opacity:.45;pointer-events:none}
   .clim .cb svg{width:20px;height:20px}
+  /* set-point on the car's own range, cool to warm: fills the tile's middle with meaning */
+  /* the track is a real slider: a tall invisible hit strip around a 6px bar */
+  .cslide{margin:8px 0 -8px;padding:12px 4px;touch-action:none;cursor:pointer;outline:none}
+  .cslide:focus-visible .ctrack i{box-shadow:0 0 0 2px var(--ink),0 0 0 6px var(--acc-sf)}
+  .cslide.drag .ctrack i{transition:none;transform:scale(1.2)}
+  .ctrack{position:relative;height:6px;border-radius:3px;
+    background:linear-gradient(90deg,var(--blue) 0%,oklch(0.80 0.06 230) 50%,oklch(0.74 0.15 50) 100%)}
+  .ctrack i{position:absolute;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;
+    background:var(--card);box-shadow:0 0 0 2px var(--ink),var(--sh-1);
+    transition:left var(--t-mid) var(--eo),transform var(--t-fast) var(--eo)}
+  .cscale{display:flex;justify-content:space-between;font-size:12px;color:var(--fnt);margin:6px 2px 0;
+    font-variant-numeric:tabular-nums}
+  /* pull to refresh on the home view */
+  .ptr{position:fixed;top:0;left:50%;z-index:45;width:38px;height:38px;margin-left:-19px;border-radius:50%;
+    background:var(--card);box-shadow:var(--sh-1);color:var(--ink);display:flex;align-items:center;
+    justify-content:center;transform:translate3d(0,-48px,0);opacity:0;pointer-events:none}
+  .ptr svg{width:18px;height:18px}
+  .ptr.go{transition:transform var(--t-mid) var(--eo),opacity var(--t-mid) linear}
+  .ptr.spin svg{animation:spin .8s linear infinite}
 
   /* full-width list rows, the lower half of the BYD home screen */
   .rowcard{background:var(--card);border-radius:var(--r3);box-shadow:var(--sh-1);overflow:hidden;
@@ -275,7 +298,7 @@
   .tabbar button.on{color:var(--ink)}
   .tabbar svg{width:23px;height:23px;transition:transform var(--t-mid) var(--eo)}
   .tabbar button.on svg{transform:translateY(-1px)}
-  .tabbar span{font-size:10.5px;font-weight:650}
+  .tabbar span{font-size:11px;font-weight:650}
 
   /* ---------- detail page (slide-over) ---------- */
   .page{position:fixed;inset:0;z-index:60;background:var(--bg);max-width:430px;margin:0 auto;
@@ -295,9 +318,12 @@
     .phead{background:color-mix(in oklab,var(--bg) 84%,transparent);
       -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
   }
-  .phead h2{flex:1;text-align:center;font-size:16px;font-weight:700;margin-right:36px}
-  .pback{width:32px;height:32px;margin-left:-8px;flex:none;display:flex;align-items:center;
-    justify-content:center;color:var(--ink);transition:transform var(--t-fast) var(--eo)}
+  .phead{display:grid;grid-template-columns:1fr}
+  /* title spans the bar with equal side room, so it stays centred whatever the back label says */
+  .phead h2{grid-column:1;grid-row:1;padding:0 84px;text-align:center;pointer-events:none;font-size:16px;font-weight:700;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pback{position:relative;z-index:1;grid-column:1;grid-row:1;justify-self:start;height:34px;margin-left:-6px;padding-right:6px;display:flex;
+    align-items:center;gap:5px;font-size:15px;font-weight:500;color:var(--acc-ink);transition:transform var(--t-fast) var(--eo)}
   .pback:active{transform:translateX(-2px)}
   .pback svg{width:10px;height:17px}
   .pbody{padding:var(--s2) var(--pad) 0}
@@ -316,7 +342,7 @@
   .stats>div{min-width:0}
   .stats b{display:block;font-size:16.5px;font-weight:750;letter-spacing:-.015em;
     font-variant-numeric:tabular-nums}
-  .stats span{display:block;font-size:10.5px;color:var(--fnt);margin-top:3px}
+  .stats span{display:block;font-size:12px;color:var(--fnt);margin-top:3px}
   .note{font-size:12.5px;line-height:1.6;color:var(--fnt);margin-top:var(--s4);padding:0 2px;
     user-select:text;-webkit-user-select:text}
 
@@ -373,10 +399,10 @@
   .c3l.ok span{color:var(--acc-ink)} .c3l.warn span{color:var(--warn)} .c3l.bad span{color:var(--bad)}
   .c3lock{position:absolute;top:var(--s3);right:var(--s3);display:inline-flex;align-items:center;gap:6px;
     padding:6px 11px;border-radius:var(--rf);background:var(--card);box-shadow:var(--sh-1);
-    font-size:11.5px;font-weight:650;color:var(--acc-ink)}
+    font-size:12px;font-weight:650;color:var(--acc-ink)}
   .c3lock.un{color:var(--warn)}
   .c3lock svg{width:13px;height:13px}
-  .car3d-hint{text-align:center;font-size:11px;color:var(--fnt);margin:-2px 0 var(--s3)}
+  .car3d-hint{text-align:center;font-size:12px;color:var(--fnt);margin:-2px 0 var(--s3)}
   .ckc{display:inline-flex;align-items:center;gap:6px}
   .ckc svg{width:13px;height:13px;flex:none}
 
@@ -425,10 +451,10 @@
   .huflow .fl.on{opacity:1}
   .huflow .mir{transform:scaleX(-1)}
   .huflow .dfz{left:10%;top:5%;width:80%;height:30%;border-radius:40% 40% 8px 8px;padding:0;background:none}
-  .huflow .cap{left:0;right:0;bottom:8px;text-align:center;font-size:11.5px;color:#9aa4b2}
+  .huflow .cap{left:0;right:0;bottom:8px;text-align:center;font-size:12px;color:#c3cad4}
   @keyframes huflow{to{background-position:0 105.2632%}}
-  .hucab .cap{position:absolute;bottom:-4px;left:0;right:0;text-align:center;font-size:11.5px;color:var(--mut)}
-  .acseats .rl small{display:block;font-size:11.5px;font-weight:500;color:var(--mut)}
+  .hucab .cap{position:absolute;bottom:-4px;left:0;right:0;text-align:center;font-size:12px;color:var(--mut)}
+  .acseats .rl small{display:block;font-size:12px;font-weight:500;color:var(--mut)}
   .acseats .seg button{min-width:40px;min-height:36px}
 
   /* energy bars ----------------------------------------------------------------
@@ -438,7 +464,7 @@
   .ebar{fill:var(--acc)}
   .ebar.hu{fill:var(--acc);fill-opacity:.22}
   .elegend .sw.swn{background:var(--acc);opacity:.3}
-  .plbl .plsub{display:block;font-size:11.5px;font-weight:500;color:var(--mut);letter-spacing:0;
+  .plbl .plsub{display:block;font-size:12px;font-weight:500;color:var(--mut);letter-spacing:0;
     text-transform:none;margin-top:2px}
   .calnet{font-size:12.5px;color:var(--mut);text-align:center;margin:-2px 0 var(--s3)}
   .eval{font-size:10px;font-weight:700;fill:var(--mut);font-variant-numeric:tabular-nums}
@@ -457,11 +483,19 @@
 
   /* charts */
   #echart,#cchart{display:block;width:100%;margin-top:var(--s3);overflow:visible}
+  #vchart,.hchart{display:block;width:100%;margin-top:12px;overflow:visible}
+  .vleg .ok{background:var(--acc)}
+  .vleg .low{background:var(--warn)}
+  .vleg .bad{background:var(--bad)}
+  .vleg{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:12px;color:var(--mut)}
+  .vleg span{display:inline-flex;align-items:center;gap:6px}
+  .vleg i{display:inline-block;width:10px;height:10px;border-radius:3px}
+  .vnote{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--mut)}
   .cstats{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s2);margin-top:var(--s4);
     padding-top:var(--s3);border-top:1px solid var(--line);text-align:center}
   .cstats b{display:block;font-size:16.5px;font-weight:750;letter-spacing:-.015em;
     font-variant-numeric:tabular-nums}
-  .cstats span{display:block;font-size:10px;color:var(--fnt);margin-top:3px}
+  .cstats span{display:block;font-size:11px;color:var(--fnt);margin-top:3px}
   .crange{text-align:center;font-size:12px;color:var(--fnt);margin-top:var(--s3);line-height:1.5;
     font-variant-numeric:tabular-nums}
   .socbar{height:8px;border-radius:var(--rf);background:oklch(0.5 0 0 / .14);overflow:hidden;margin-top:var(--s4)}
@@ -505,7 +539,7 @@
   .caltot{display:flex;gap:var(--s5);justify-content:center;margin-top:var(--s5);padding-top:var(--s4);
     border-top:1px solid var(--line);text-align:center}
   .caltot b{display:block;font-size:16.5px;font-weight:750;font-variant-numeric:tabular-nums}
-  .caltot span{display:block;font-size:10.5px;color:var(--fnt);margin-top:3px}
+  .caltot span{display:block;font-size:12px;color:var(--fnt);margin-top:3px}
   .caltot.mid{margin-top:var(--s4);padding-top:0;border-top:0}
   .calsub{text-align:center;font-size:12px;color:var(--fnt);margin-top:var(--s4)}
   .calday.off.cg{opacity:.75;pointer-events:auto;background:var(--card);box-shadow:var(--sh-1)}
@@ -544,7 +578,7 @@
   .fgrid2 b{display:block;font-size:18px;font-weight:750;font-variant-numeric:tabular-nums}
   .fgrid2 span{display:block;font-size:11px;color:var(--fnt);margin-top:3px}
   .fgrid2 b small{font-size:11px;font-weight:600;color:var(--mut)}
-  .flexc .fsub{font-size:11.5px;color:var(--fnt);margin-top:3px}
+  .flexc .fsub{font-size:12px;color:var(--fnt);margin-top:3px}
   .flexc .fbig u{letter-spacing:0}
   .flexc .fbeat{margin-top:var(--s4);padding:10px;border-radius:var(--r2);text-align:center;
     font-size:12.5px;font-weight:700;color:var(--acc-ink);background:var(--acc-sf)}
@@ -695,7 +729,7 @@
   .hutag.ok{background:var(--acc-sf);color:var(--acc-ink)}
   .humedia{border-radius:var(--r2);overflow:hidden;background:var(--card-2);position:relative}
   .humedia svg,.humedia video{display:block;width:100%;height:auto}
-  .humedia .cap{position:absolute;left:10px;bottom:9px;font-size:11.5px;font-weight:700;color:var(--mut);
+  .humedia .cap{position:absolute;left:10px;bottom:9px;font-size:12px;font-weight:700;color:var(--mut);
     letter-spacing:.04em}
   .huill{display:block;width:100%;height:auto;margin:var(--s3) 0 var(--s1)}
   .hs-scr{fill:oklch(0.22 0.016 255);stroke:var(--line);stroke-width:1.2}
@@ -814,7 +848,7 @@
   .hulist button+button{border-top:1px solid var(--line)}
   .hulist button.on{background:var(--acc-sf)}
   .hulist .rl{flex:1;min-width:0;font-size:13.5px;font-weight:650}
-  .hulist small{display:block;font-size:11.5px;font-weight:500;color:var(--fnt);margin-top:2px}
+  .hulist small{display:block;font-size:12px;font-weight:500;color:var(--fnt);margin-top:2px}
   .hukv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin-top:var(--s3);font-size:12.5px}
   .hukv dt{color:var(--fnt)} .hukv dd{color:var(--ink);font-weight:600;min-width:0;overflow-wrap:anywhere}
   .huprog{margin-top:var(--s3);list-style:none;padding:0}
@@ -855,6 +889,7 @@ seats read "Not available" when the car reports none.
 A11Y: --mut ~5.6:1 and --fnt ~4.8:1 on light; both above 4.5:1 in dark. Text selection allowed on data.
 MOTION: one ease token, 140/220/320ms, transform and opacity only, prefers-reduced-motion honored. -->
 
+<div class="ptr" id="ptr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.5a8 8 0 0113.3-2.7L20.5 9.5"/><path d="M20.5 4.5v5h-5"/><path d="M19.5 14.5a8 8 0 01-13.3 2.7L3.5 14.5"/><path d="M3.5 19.5v-5h5"/></svg></div>
 <div id="viewHome">
   <div id="loginGuard" role="status" hidden style="margin:12px 16px 0;padding:10px 12px;border:1px solid var(--line);
        border-left:3px solid var(--warn);font-size:13px;line-height:1.45;color:var(--ink)"></div>
@@ -942,6 +977,8 @@ MOTION: one ease token, 140/220/320ms, transform and opacity only, prefers-reduc
   <div class="pbody" id="pgAlertsBody"></div></div>
 <div class="page" id="pgActivity" data-k="activity"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Activity</h2></div>
   <div class="pbody" id="pgActivityBody"></div></div>
+<div class="page" id="pgCarRep" data-k="carrep"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Report my car</h2></div>
+  <div class="pbody" id="pgCarRepBody"></div></div>
 <div class="page" id="pgHu" data-k="hu"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Head unit add-ons</h2></div>
   <div class="pbody" id="pgHuBody"></div></div>
 
@@ -1264,7 +1301,7 @@ async function fire(op, btn){        // resolves true when the car reported doin
 function renderHero(){
   $('hModel').textContent = (S.vehicle && S.vehicle.model) || 'My car';
   countTo($('hRange'), S.range_km != null ? Math.round(S.range_km) : null);
-  $('hDot').className = 'dot' + (S.online ? ' on' : '');
+  $('hDot').className = 'dot' + ((S.moving || (S.charging && S.charging.active)) ? ' on' : '');   // green = car busy, not just reachable
   $('hState').textContent =
     S.moving ? 'Driving' : (S.charging && S.charging.active) ? 'Charging' : 'Powered off';
   $('hWhen').textContent = '\u00b7  Updated ' + (ago(S.updated) || 'never');
@@ -1323,8 +1360,9 @@ function renderQA(){
     b.innerHTML = '<span class="qc">' + icon(d.k) + '</span>' + d.label;
     b.onclick = async () => {
       if(PENDING.has(d.op)) return;            // still waiting on the car for this one
+      buzz(8);
       if(d.ask && !(await ask(d.label + '?', d.askNote || 'The command is sent to the car now.'))) return;
-      fire(d.op, b);
+      if(d.k === 'ac') acPower(!acOn, b); else fire(d.op, b);
     };
     qa.appendChild(b);
   });
@@ -1407,7 +1445,52 @@ function row(ic, label, val, cls, page){
     (page ? CHEV : '') + '</' + tag + '>';
 }
 
+// one place that moves the home A/C tile: number, thumb, slider value; ticks and sends only on change
+// home tile status line while the A/C is off and a new target is waiting
+function acHint(){
+  const el = $('climState'); if(!el || S.ac_on) return;
+  const sp = acSetPoint();
+  el.textContent = (sp == null || sp !== acTarget) ? 'Off \u00b7 starts at ' + acTarget + '\u00b0' : 'Not turned on';
+}
+// power the A/C from anywhere; on start, send the target too if it differs from the car's own
+async function acPower(on, btn){
+  buzz(8);
+  const ok = await fire(on ? '741001' : '741000', btn);
+  if(ok && on && acTarget !== acSetPoint()) await fire(tempOp(acTarget));
+  return ok;
+}
+function setClim(v, quiet){
+  const r = acRange();
+  v = Math.min(r.mx, Math.max(r.mn, Math.round((v - r.mn) / r.st) * r.st + r.mn));
+  v = Math.round(v * 10) / 10;
+  const changed = v !== acTarget;
+  acTarget = v;
+  $('climTemp').textContent = acTarget + '\u00b0';
+  $('climThumb').style.left = acPct() + '%';
+  $('climSlide').setAttribute('aria-valuenow', acTarget);
+  if(changed || !quiet){ buzz(6); sendTemp(); }
+}
+// drag (or tap) anywhere on the bar to pick a temperature; arrow keys step it
+function wireClimSlide(){
+  const el = $('climSlide'); if(!el) return;
+  let moved = false;
+  const at = ev => { const b = el.querySelector('.ctrack').getBoundingClientRect(), r = acRange();
+    return r.mn + Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)) * (r.mx - r.mn); };
+  el.onpointerdown = ev => { ev.stopPropagation(); el.setPointerCapture(ev.pointerId); el.classList.add('drag');
+    moved = true; setClim(at(ev), true); };
+  el.onpointermove = ev => { if(el.classList.contains('drag')) setClim(at(ev), true); };
+  el.onpointerup = el.onpointercancel = () => el.classList.remove('drag');
+  el.onclick = ev => { ev.stopPropagation(); if(!moved) return; moved = false; };   // never opens the Climate page
+  el.onkeydown = ev => {
+    const d = {ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1}[ev.key];
+    if(d){ ev.preventDefault(); setClim(acTarget + d * acRange().st, true); }
+  };
+}
+function acPct(){ const r = acRange(); return Math.round((acTarget - r.mn) / ((r.mx - r.mn) || 1) * 100); }
+// a light tick on taps that change something (Android; iOS Safari ignores it)
+function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
 function renderCards(){
+  if(document.querySelector('.cslide.drag')) return;   // a live poll must not rebuild the tile mid-drag
   const ds = doorSummary();
   const e = S.energy || {};
   const cons = e.consumption != null ? e.consumption + ' kWh/100km' : 'No data yet';
@@ -1435,8 +1518,13 @@ function renderCards(){
       '<div class="cr" style="margin-top:12px">' +
         '<span><span class="t">A/C</span><span class="s ' + (S.ac_on ? 'ok' : '') + '" id="climState">' +
           cabin + '</span></span>' +
-        '<button class="cb' + (S.ac_on ? ' on' : '') + '" data-page="ac" aria-label="Climate detail">' +
-          icon('ac') + '</button></div></div>' +
+        '<button class="cb' + (S.ac_on ? ' on' : '') + (PENDING.has(S.ac_on ? '741000' : '741001') ? ' busy' : '') +
+          '" id="climPwr" aria-pressed="' + !!S.ac_on + '" aria-label="' + (S.ac_on ? 'Turn A/C off' : 'Turn A/C on') + '">' +
+          icon('ac') + '</button></div>' +
+      '<div class="cslide" id="climSlide" role="slider" tabindex="0" aria-label="A/C temperature" aria-valuemin="' +
+        acRange().mn + '" aria-valuemax="' + acRange().mx + '" aria-valuenow="' + acTarget + '">' +
+        '<div class="ctrack"><i id="climThumb" style="left:' + acPct() + '%"></i></div></div>' +
+      '<div class="cscale"><span>' + acRange().mn + '\u00b0</span><span>' + acRange().mx + '\u00b0</span></div></div>' +
     '<div style="display:grid;gap:12px">' +
       card('door', 'Doors', ds.t, ds.cls, 'doors') +
       card('tyre', 'Tyres', tyreSub, S.tyre_status === 'Normal' ? 'ok' : 'warn', 'tyres') +
@@ -1459,9 +1547,11 @@ function renderCards(){
     ev.stopPropagation();
     const r = acRange();
     acTarget = Math.min(r.mx, Math.max(r.mn, acTarget + Number(b.dataset.step) * r.st));
-    $('climTemp').textContent = acTarget + '\u00b0';
-    sendTemp();
+    setClim(acTarget);
   });
+  wireClimSlide();
+  $('climPwr').onclick = ev => { ev.stopPropagation(); if(!$('climPwr').classList.contains('busy')) acPower(!S.ac_on, $('climPwr')); };
+  acHint();
 
   // warm any value the poll actually changed; rise once on the first paint only
   let i = 0;
@@ -1493,8 +1583,12 @@ function acRange(){                       // the car's own set-point range and s
   return {mn: c.min != null ? c.min : 16, mx: c.max != null ? c.max : 30, st: c.step || 0.5};
 }
 function sendTemp(){
-  // debounced so stepping does not spam the car
+  // A/C off: nothing is sent, the target waits for the next start (acPower sends it then).
+  // Nobody expects sliding a number to start the car's climate.
   clearTimeout(acTimer);
+  // acTimer is cleared here too: adoptSetPoint() treats a set acTimer as a step still waiting to send
+  if(!S.ac_on){ acTimer = null; acHint(); return; }
+  // debounced so stepping does not spam the car
   acTimer = setTimeout(() => { acTimer = null; fire(tempOp(acTarget)); }, 800);
 }
 // Seat rows this car offers, from its own vehicleControlConfig (CAPS.seats). Each row carries its
@@ -1644,7 +1738,7 @@ function renderAc(){
   el.querySelectorAll('[data-xop]').forEach(b => b.onclick = () => fire(b.dataset.xop, b));
   el.querySelector('[data-ac="heat"]').onclick = () => fire(S.ac_on ? '741F00' : '741F01');
   el.querySelector('[data-ac="cool"]').onclick = () => fire(S.ac_on ? '742000' : '742001');
-  el.querySelector('[data-ac="pwr"]').onclick  = () => fire(S.ac_on ? '741000' : '741001');
+  el.querySelector('[data-ac="pwr"]').onclick  = ev => acPower(!S.ac_on, ev.currentTarget);
   el.querySelector('[data-ac="pwr"]').classList.toggle('on', !!S.ac_on);
 }
 // Smart A/C run time and advance travel have their own host below the live controls: renderAc
@@ -2113,9 +2207,10 @@ function drawEnergy(hist, wltp){
 }
 
 // ---- battery page: SoC + range + 12V watch + health + care ----
+const fmtD = d => { const t = new Date(d + 'T00:00:00'); return t.getDate() + ' ' + t.toLocaleString('en', {month: 'short'}); };
 function renderBatt(){
   const el = $('pgBattBody');
-  const h = S.health || {}, bc = S.battery_care || {}, lf = S.lifetime || {};
+  const h = S.health || {}, bc = S.battery_care || {}, lf = S.lifetime || {}, pk = h.pack || {};
   const soc = S.battery != null ? S.battery : null;
   const v12ok = S.volt12_status === 'ok';
   const rows = [];
@@ -2130,22 +2225,118 @@ function renderBatt(){
     '<div class="panel"><div class="plbl">State of charge</div>' +
     '<div class="pval num">' + (soc != null ? soc : '—') + '<span class="u">%</span></div>' +
     '<div class="socbar"><i style="width:' + (soc || 0) + '%"></i></div></div>' +
+    '<div class="sech" style="padding-left:0;padding-right:0"><span class="ov">Battery health</span></div>' +
+    healthPanel(pk) +
     '<div class="sech" style="padding-left:0;padding-right:0"><span class="ov">12V auxiliary</span></div>' +
-    '<div class="panel"><div class="plbl">Resting voltage</div>' +
+    '<div class="panel"><div class="plbl">' + (S.volt12 != null && S.volt12 >= 13.2 ?
+      'Voltage now &middot; topped up by the main battery' : 'Voltage now') + '</div>' +
     '<div class="pval num">' + (S.volt12 != null ? S.volt12.toFixed(1) : '—') + '<span class="u">V</span></div>' +
-    '<div class="stats"><div><b class="num">' + (S.volt12_min7d != null ? S.volt12_min7d.toFixed(1) + ' V' : '—') +
-      '</b><span>7-day low</span></div>' +
-    '<div><b style="color:' + (v12ok ? 'var(--acc-ink)' : 'var(--bad)') + '">' +
+    '<div class="stats"><div><b class="num">' + (S.volt12_rest7d != null ? S.volt12_rest7d.toFixed(2) + ' V' :
+      S.volt12_min7d != null ? S.volt12_min7d.toFixed(1) + ' V' : '—') +
+      '</b><span>' + (S.volt12_rest7d != null ? '7-day resting low' : '7-day low') + '</span></div>' +
+    '<div><b style="color:' + (v12ok ? 'var(--acc-ink)' : S.volt12_status === 'low' ? 'var(--warn)' : 'var(--bad)') + '">' +
       (S.volt12_status || '—') + '</b><span>status</span></div></div></div>' +
+    ((S.volt12_hist || []).length > 1 ?
+      '<div class="panel"><div class="plbl">Sleeping voltage, last ' + S.volt12_hist.length + ' days</div>' +
+      '<svg id="vchart" viewBox="0 0 340 168" role="img" aria-label="12V sleeping voltage per day"></svg>' +
+      '<div class="vleg"><span><i class="ok"></i>healthy</span><span><i class="low"></i>a bit low</span>' +
+      '<span><i class="bad"></i>weak</span></div>' +
+      '<p class="vnote">Judged on the voltage when the car sleeps. Healthy means 12.5 V or more. ' +
+      'If the line keeps dropping into red, the 12V battery is getting weak and the car may stop answering the app.</p></div>' : '') +
     (bc.state ? '<div class="sech" style="padding-left:0;padding-right:0"><span class="ov">Battery care</span></div>' +
-      '<div class="panel"><div class="plbl">LFP balancing &mdash; full charge weekly</div>' +
+      '<div class="panel"><div class="plbl">Charge to 100% ' + (bc.interval_days ? 'about every ' +
+        Math.round(bc.interval_days) + ' days' : 'now and then') + '</div>' +
+      (bc.learned && bc.used_since_full != null ?
+        '<div class="socbar"><i style="width:' + Math.min(100, bc.used_since_full / bc.target_used * 100) + '%"></i></div>' : '') +
       '<div class="stats" style="border-top:0;margin-top:14px;padding-top:0">' +
       '<div><b>' + (bc.last_full_dt || '—') + '</b><span>last 100%</span></div>' +
-      '<div><b>' + (bc.next_due_dt || '—') + '</b><span>next due</span></div></div></div>' : '') +
+      (bc.learned && bc.used_since_full != null ?
+        '<div><b class="num">' + bc.used_since_full + '%</b><span>used since</span></div>' : '') +
+      '<div><b>' + (bc.next_due_dt || '—') + '</b><span>next, or sooner if you drive more</span></div></div>' +
+      '<p class="vnote">' + (bc.learned ?
+        'Learned from your driving: you use about ' + bc.pct_per_week + '% a week, so a full charge every ' +
+        Math.round(bc.interval_days) + ' days keeps the range reading accurate (once per ' + bc.target_used +
+        '% used). ' : 'A full charge lets the car re-check its battery gauge and even out the cells. ') +
+        'Finish it shortly before you drive, rather than leaving the car sitting at 100%.</p></div>' : '') +
     '<div class="sech" style="padding-left:0;padding-right:0"><span class="ov">Detail</span></div>' +
     '<div class="rowcard">' + rows.map(r =>
       '<div class="row"><span class="rl">' + r[0] + '</span><span class="rv">' + r[1] + '</span></div>').join('') +
     '</div>';
+  drawV12(S.volt12_hist || []);
+}
+
+// Battery health learned from long charges (no OBD dongle). Never blank: before a reading it shows
+// how many long charges are in, what counts, and roughly when the first reading lands.
+function healthPanel(pk){
+  const n = pk.sessions || 0, pts = pk.points || [];
+  const where = pk.mode === 'ac' ? 'home (AC) charges' : 'fast (DC) charges';
+  const eta = pk.eta_days != null ? (pk.eta_days <= 1 ? 'in a day or two' :
+    pk.eta_days < 14 ? 'in about ' + pk.eta_days + ' days' : 'in about ' + Math.round(pk.eta_days / 7) + ' weeks') : null;
+  let h = '<div class="panel"><div class="plbl">' + (pk.soh != null ?
+    'Capacity kept since ' + fmtD(pk.since) + (pk.early ? ' &middot; early reading' : '') : 'Still learning your battery') + '</div>';
+  if(pk.soh != null){
+    h += '<div class="pval num">' + pk.soh + '<span class="u">%</span></div>' +
+      '<div class="socbar"><i style="width:' + pk.soh + '%"></i></div>';
+  } else {
+    h += '<div class="pval num">' + n + '<span class="u">/ ' + (pk.need || 6) + ' long charges</span></div>' +
+      '<div class="socbar"><i style="width:' + Math.min(100, n / (pk.need || 6) * 100) + '%"></i></div>';
+  }
+  h += hdots(pts, pk);
+  h += '<p class="vnote">' + (pk.soh != null ?
+    'Worked out from ' + n + ' ' + where + ': a full battery took ' + pk.base_kwh100 + ' kWh at first and ' +
+      pk.now_kwh100 + ' kWh lately. Give or take about ' + (pk.margin || 3) + '%, so small moves are noise.' +
+      (pk.early && pk.need ? ' It firms up after ' + pk.need + ' long charges' + (eta ? ', ' + eta : '') + '.' : '') :
+    (n ? 'First reading after ' + (pk.need || 6) + ' long charges' + (eta ? ', ' + eta + ' at your pace' : '') + '. ' :
+      'No long charge logged yet. ') +
+      'A long charge adds 40% or more in one go, at home or at a fast charger.') +
+    ' This is a rough trend from the car\'s own charging data, no OBD dongle needed. It compares your battery with itself' +
+    ' since logging began, not with a new car.</p></div>';
+  return h;
+}
+// one dot per long charge: kWh it took to fill the battery 0-100%. A fading pack drifts down.
+function hdots(pts, pk){
+  if(!pts.length) return '';
+  const W = 340, H = 92, L = 34, R = 12, T = 10, B = 20, v = pts.map(p => p.kwh100);
+  let lo = Math.min(...v), hi = Math.max(...v), pad = Math.max(1.5, (hi - lo) * 0.25); lo -= pad; hi += pad;
+  const X = i => L + (W - L - R) * (pts.length > 1 ? i / (pts.length - 1) : 0.5);
+  const Y = x => T + (1 - (x - lo) / (hi - lo)) * (H - T - B);
+  let g = [hi - pad, lo + pad].map(x => '<text x="' + (L - 6) + '" y="' + (Y(x) + 3).toFixed(1) +
+    '" text-anchor="end" font-size="9.5" fill="var(--fnt)">' + x.toFixed(0) + '</text>').join('');
+  if(pk.base_kwh100 != null) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(pk.base_kwh100).toFixed(1) +
+    '" y2="' + Y(pk.base_kwh100).toFixed(1) + '" stroke="var(--fnt)" stroke-dasharray="3 3" stroke-width="1"/>';
+  pts.forEach((p, i) => g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.kwh100).toFixed(1) +
+    '" r="3.5" fill="var(--acc)"><title>' + fmtD(p.d) + ': ' + p.kwh100 + ' kWh for 0-100%</title></circle>');
+  g += '<text x="' + L + '" y="' + (H - 5) + '" font-size="9.5" fill="var(--fnt)">' + fmtD(pts[0].d) + '</text>' +
+    '<text x="' + (W - R) + '" y="' + (H - 5) + '" text-anchor="end" font-size="9.5" fill="var(--fnt)">kWh per full battery</text>';
+  return '<svg class="hchart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="kWh per full battery, each long charge">' + g + '</svg>';
+}
+
+// 12V: one point per day = the sleeping (resting) voltage, over coloured zones so the reading
+// needs no legend math. Days the car never slept leave a gap. Last value tagged on the right.
+function drawV12(h){
+  const svg = $('vchart'); if(!svg) return;
+  const W = 340, H = 168, L = 34, R = 40, T = 8, B = 22, lo = 11.8, hi = 13.0;
+  const n = h.length, X = i => L + (W - L - R) * (n > 1 ? i / (n - 1) : 0.5);
+  const Y = v => T + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (H - T - B);
+  const band = (a, b, c) => '<rect x="' + L + '" y="' + Y(b).toFixed(1) + '" width="' + (W - L - R) +
+    '" height="' + (Y(a) - Y(b)).toFixed(1) + '" fill="' + c + '" opacity=".13"/>';
+  let g = band(12.5, hi, 'var(--acc)') + band(12.0, 12.5, 'var(--warn)') + band(lo, 12.0, 'var(--bad)');
+  [12.0, 12.5, 13.0].forEach(v => g += '<text x="' + (L - 6) + '" y="' + (Y(v) + 3).toFixed(1) +
+    '" text-anchor="end" font-size="9.5" fill="var(--fnt)">' + v.toFixed(1) + '</text>');
+  const col = v => v < 12.0 ? 'var(--bad)' : v < 12.5 ? 'var(--warn)' : 'var(--acc)';
+  let seg = [];
+  const flush = () => { if(seg.length > 1) g += '<polyline points="' + seg.join(' ') +
+    '" fill="none" stroke="var(--ink)" stroke-opacity=".55" stroke-width="1.6" stroke-linejoin="round"/>'; seg = []; };
+  h.forEach((p, i) => { if(p.rest != null) seg.push(X(i).toFixed(1) + ',' + Y(p.rest).toFixed(1)); else flush(); }); flush();
+  h.forEach((p, i) => { if(p.rest == null) return;
+    g += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.rest).toFixed(1) + '" r="3" fill="' + col(p.rest) + '">' +
+      '<title>' + fmtD(p.d) + ': ' + p.rest.toFixed(2) + ' V</title></circle>'; });
+  const last = [...h].reverse().find(p => p.rest != null);
+  if(last) g += '<text x="' + (W - R + 6) + '" y="' + (Y(last.rest) + 3.5).toFixed(1) + '" font-size="11" font-weight="600" fill="' +
+    col(last.rest) + '">' + last.rest.toFixed(2) + '</text>';
+  if(n) g += '<text x="' + L + '" y="' + (H - 6) + '" font-size="9.5" fill="var(--fnt)">' + fmtD(h[0].d) + '</text>' +
+    '<text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end" font-size="9.5" fill="var(--fnt)">today</text>';
+  svg.innerHTML = g;
 }
 
 // ---- charging page: live state + charge curve + stats + history ----
@@ -2557,8 +2748,9 @@ function renderAcct(){
     {ic: 'camera', t: 'Update car photo',  s: 'Re-fetch the render from CarLinko', fn: async () => {
         const d = await api('api/photorefresh', {method: 'POST'});
         toast(d.ok ? 'Photo updated' : (d.error || 'failed')); if(d.ok) load(); }},
-    {ic: 'link',   t: 'About', s: 'J5 EV Dashboard V2 · self-hosted', fn: () =>
-        toast('J5 EV Dashboard V2 · CarLinko, reverse-engineered')},
+    {ic: 'car',    t: 'Report my car',     s: 'Help add your model: copy a redacted report', fn: () => openPage('carrep')},
+    {ic: 'link',   t: 'About', s: 'OpenLinko · self-hosted CarLinko dashboard', fn: () =>
+        toast('OpenLinko · CarLinko, reverse-engineered')},
   ];
 
   $('acctRows').innerHTML =
@@ -2578,6 +2770,36 @@ function renderAcct(){
     if(b.dataset.ui === 'v1') toast('Classic will open from the app icon');
   });
   $('aNote').textContent = 'Data source: your own CarLinko account, self-hosted. Nothing leaves this server.';
+}
+
+// ---- "Add my car": a redacted report (model, CarLinko's control config, 3 raw frames) to paste
+// into the GitHub issue form. Built by the server (/api/carreport); plate, VIN and account ids are
+// stripped there, and the status frames carry no location.
+const ADD_CAR_URL = 'https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml';
+let carRep = null;
+async function renderCarRep(){
+  const el = $('pgCarRepBody');
+  const draw = () => {
+    el.innerHTML =
+      '<div class="panel"><p class="hutx" style="margin:0">Your car isn\'t a J5 or the numbers look off? ' +
+        'This report lets the decoder be checked against your model. Copy it, open the form, paste it in, ' +
+        'and add what your car\'s own screen shows.</p>' +
+        '<div class="huip"><button class="hubtn2" id="crCopy"' + (carRep ? '' : ' disabled') + '>Copy report</button>' +
+        '<a class="hubtn2" href="' + ADD_CAR_URL + '" target="_blank" rel="noopener">Open the GitHub form</a></div></div>' +
+      '<div class="panel"><div class="plbl">What gets shared</div>' +
+        '<pre class="hucode" id="crText">' + huEsc(carRep == null ? 'Building the report…' : carRep) + '</pre>' +
+        '<p class="hutx" style="margin:var(--s3) 0 0;color:var(--mut);font-size:12.5px">No plate, VIN, email or location. ' +
+        'Read it before you post: it goes on a public GitHub issue.</p></div>';
+    const b = $('crCopy'); if(b) b.onclick = () => huCopy(carRep, b);
+  };
+  draw();
+  if(carRep) return;
+  try{
+    const r = await fetch('api/carreport');
+    if(r.status === 401){ location.href = './'; return; }
+    carRep = r.ok ? await r.text() : 'Could not build the report (' + r.status + ').';
+  }catch(e){ carRep = 'Could not reach the dashboard server.'; }
+  if(openKey === 'carrep') draw();
 }
 
 // ---- head unit add-ons: tutorial + find/install over the head unit's own ADB ----
@@ -2928,7 +3150,8 @@ const PAGES = {ac: ['pgAc', () => { renderAc(); renderAcSettings(); }], doors: [
                batt: ['pgBatt', renderBatt], chg: ['pgChg', renderChg],
                dist: ['pgDist', renderDist], flex: ['pgFlex', renderFlex],
                plan: ['pgPlan', renderPlan], activity: ['pgActivity', renderActivity],
-               alerts: ['pgAlerts', () => withSettings(renderAlerts)], hu: ['pgHu', renderHu]};
+               alerts: ['pgAlerts', () => withSettings(renderAlerts)], hu: ['pgHu', renderHu],
+               carrep: ['pgCarRep', renderCarRep]};
 let openKey = null;
 
 function openPage(k, fromHistory){
@@ -2936,6 +3159,8 @@ function openPage(k, fromHistory){
   if(k === 'ac'){ const r = acRange(); acTarget = Math.min(r.mx, Math.max(r.mn, acTarget)); }
   p[1]();
   const el = $(p[0]);
+  const bl = el.querySelector('.pbl');               // iOS-style back label: where you came from
+  if(bl) bl.textContent = $('viewAcct').hidden ? 'Vehicle' : 'Account';
   el.scrollTop = 0;
   el.classList.add('open');
   // the page slides in; its contents rise a beat behind it so the two read as one move
@@ -2950,6 +3175,7 @@ function closePage(fromHistory){
   openKey = null;
   if(!fromHistory) history.back();
 }
+document.querySelectorAll('.pback').forEach(b => b.insertAdjacentHTML('beforeend', '<span class="pbl">' + (SOLO ? 'Sign in' : 'Vehicle') + '</span>'));
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closePage());
 window.addEventListener('popstate', ev => {
   const k = ev.state && ev.state.page;
@@ -2991,8 +3217,39 @@ document.addEventListener('keydown', ev => {
   }, {passive: true});
 })();
 
+// pull to refresh on the home view: drag down from the top, let go past the line to poke the car
+(function(){
+  const ind = $('ptr'), LINE = 72;
+  let sy = 0, on = false;
+  const reset = () => { ind.style.transform = ''; ind.style.opacity = ''; };
+  document.addEventListener('touchstart', ev => {
+    if(SOLO || openKey || $('viewHome').hidden || window.scrollY > 0 || ev.touches.length !== 1) return;
+    if($('sheet').classList.contains('show') || ind.classList.contains('spin')) return;
+    sy = ev.touches[0].clientY; on = true; ind.classList.remove('go');
+  }, {passive: true});
+  document.addEventListener('touchmove', ev => {
+    if(!on) return;
+    if(window.scrollY > 0){ on = false; ind.classList.add('go'); reset(); return; }
+    const d = Math.min(LINE * 1.4, Math.max(0, ev.touches[0].clientY - sy) * 0.55);
+    ind.style.opacity = Math.min(1, d / LINE);
+    ind.style.transform = 'translate3d(0,' + (d - 36) + 'px,0) rotate(' + Math.round(d * 4) + 'deg)';
+    if(d >= LINE && !ind.dataset.armed){ ind.dataset.armed = '1'; buzz(10); }
+    else if(d < LINE) delete ind.dataset.armed;
+  }, {passive: true});
+  document.addEventListener('touchend', async () => {
+    if(!on) return;
+    on = false; ind.classList.add('go');
+    if(!ind.dataset.armed){ reset(); return; }
+    delete ind.dataset.armed;
+    ind.style.transform = 'translate3d(0,' + (LINE - 36) + 'px,0)'; ind.style.opacity = '1';
+    ind.classList.add('spin');
+    try{ await $('hRefresh').onclick(); } finally { ind.classList.remove('spin'); reset(); }
+  }, {passive: true});
+})();
+
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabbar button').forEach(x => x.classList.toggle('on', x === b));
+  if(!b.classList.contains('on')) buzz(5);
   const home = b.dataset.v === 'home';
   const shown = home ? $('viewHome') : $('viewAcct');
   $('viewHome').hidden = !home; $('viewAcct').hidden = home;

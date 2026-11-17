@@ -36,7 +36,7 @@ def bad(path, msg):
 
 
 def check_python():
-    files = tracked("tools/*.py")
+    files = tracked("tools/*.py") + tracked("research/*.py") + tracked("research/*/*.py")
     for f in files:
         try:
             with open(f, encoding="utf-8") as fh:

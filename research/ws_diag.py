@@ -2,7 +2,7 @@ import socket, ssl, json, time, os
 import websocket
 
 # token from token.txt, vehicle id from creds.json (both gitignored).
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools")  # creds.json / token.txt live there
 try: _C = json.load(open(os.path.join(_HERE, "creds.json")))
 except Exception: _C = {}
 _TOK = os.path.join(_HERE, "token.txt")

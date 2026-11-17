@@ -6,7 +6,7 @@ problem: applying the reference car's 58.9 kWh pack to a PHEV's ~18 kWh one make
 efficiency and savings figure roughly 3x wrong, silently and without ever looking wrong.
 
 Every row here is a value an owner confirmed against their own car's dashboard. Add yours with a
-compatibility report: https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md
+car report: https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml
 """
 import re
 

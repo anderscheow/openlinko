@@ -1,10 +1,10 @@
 """Stage 0 of the car model (optional): make a single-view image-to-3D car symmetric.
 
 A single photo shows one side of the car; the generator invents the other, usually worse. A car is mirror-symmetric,
-so keep the half the photo saw and reflect it. Runs before tools/car_prep.py.
+so keep the half the photo saw and reflect it. Runs before research/car-model/car_prep.py.
 
 usage (Hunyuan3D venv: trimesh, numpy, pymeshlab):
-  python tools/car_mirror.py raw.glb out_prefix
+  python research/car-model/car_mirror.py raw.glb out_prefix
 writes out_prefix_L.glb and out_prefix_R.glb (each built from one half); look at both and pass the better one on.
 
 Expects Y up (TRELLIS.2 and Hunyuan3D GLBs load that way). The width axis is the shorter horizontal extent; the

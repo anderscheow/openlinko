@@ -38,7 +38,7 @@ cloud and the optional map services above.
 ## Reporting a vulnerability
 
 Found something? **Please report it privately first** — don't open a public issue with exploit
-details. Use [GitHub private vulnerability reporting](https://github.com/GodrezJr2/j5-ev-dashboard/security/advisories/new)
+details. Use [GitHub private vulnerability reporting](https://github.com/GodrezJr2/openlinko/security/advisories/new)
 (Security tab → *Report a vulnerability*). I'll respond as fast as I can.
 
 This is a hobby project with no warranty — see [LICENSE](LICENSE).

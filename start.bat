@@ -1,9 +1,9 @@
 @echo off
-rem J5 EV Dashboard - Windows one-click start. No Docker, no terminal knowledge needed.
+rem OpenLinko - Windows one-click start. No Docker, no terminal knowledge needed.
 rem Double-click this file. First run installs what it needs, then opens the dashboard.
 setlocal
 cd /d "%~dp0"
-title J5 EV Dashboard
+title OpenLinko
 
 set PY=
 where py >nul 2>nul && set PY=py -3

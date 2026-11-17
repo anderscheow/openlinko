@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # One-command self-hosted install: venv + deps + login + systemd services (+ optional Tailscale).
 #
-#   git clone https://github.com/GodrezJr2/j5-ev-dashboard.git
-#   cd j5-ev-dashboard && ./tools/install.sh
+#   git clone https://github.com/GodrezJr2/openlinko.git
+#   cd openlinko && ./tools/install.sh
 #
 # Flags:
 #   --tailscale     also install Tailscale, so you can reach the dashboard from your phone

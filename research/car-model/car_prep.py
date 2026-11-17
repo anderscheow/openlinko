@@ -1,8 +1,8 @@
 """Stage 1 of the car model: raw Hunyuan3D shape -> clean, oriented, real-size, denoised dense mesh.
 
 usage (needs trimesh, numpy, pymeshlab; the Hunyuan3D venv has them):
-  python tools/car_prep.py "D:/Llm Studio/Hunyuan3D/out/mv4_r512_s1.glb" build/car_t40_s1.glb --taubin 40
-then:  python tools/split_car.py build/car_t40_s1.glb web/car_parts
+  python research/car-model/car_prep.py "D:/Llm Studio/Hunyuan3D/out/mv4_r512_s1.glb" build/car_t40_s1.glb --taubin 40
+then:  python research/car-model/split_car.py build/car_t40_s1.glb web/car_parts
 
 The mesh is scaled to the Jaecoo J5 EV brochure size from MODEL_SPECS in tools/server.py (length 4380, width 1860,
 height 1650 mm), because an image-to-3D shape has no real scale and the clay renders are drawn a little tall. Width

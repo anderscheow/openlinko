@@ -51,7 +51,7 @@ DefrostFront, SeatHeat, SteeringHeat, EngineStart, QuickCool/QuickHeat, Charge s
 
 ## Label map — jump-table decode (runtime verification in progress)
 Contributed by [@elad-bar](https://github.com/elad-bar) in
-[#11](https://github.com/GodrezJr2/j5-ev-dashboard/issues/11): the `assembledSendData` jump table
+[#11](https://github.com/GodrezJr2/openlinko/issues/11): the `assembledSendData` jump table
 cross-read with the `vcLoadingMessage` labels — the authoritative source the section above said was
 missing. Replaces the earlier structure-only guesses (which were wrong on almost every label: our
 "Lock" `741000` is really A/C off, our "Find car" `740100` is really Lock, etc.).

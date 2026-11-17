@@ -44,8 +44,8 @@ Notes:
 | POST | `/system/record/getResearch` | Survey check | body `{vehicleId,userId,clientType}` |
 | POST | `/pub/file/appLog` | **Uploads internal debug logs** (multipart) | Leaks Dart logs w/ VIN, email, decoded beans. Useful + a privacy smell. |
 | GET | `/user/notice/unReadCount?vehicleId=` | Notification counts | |
-| GET | **`/user/vehicle/state/{vehicleId}`** | **Telemetry over REST** | Returns the exact same 73-byte hex blob as WS `action:6` — one signed GET per poll is enough for reads, no persistent WS needed. Verified live 2026-08-13 (byte-for-byte match with the WS frame, incl. battery/range). Reported by [@jebentancour](https://github.com/jebentancour) in [#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5) |
-| GET | **`/user/vehicle/isOnline/{vehicleId}`** | Car reachable (bool) | `{"data":true}` / `false`; same signing. Also [#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5) |
+| GET | **`/user/vehicle/state/{vehicleId}`** | **Telemetry over REST** | Returns the exact same 73-byte hex blob as WS `action:6` — one signed GET per poll is enough for reads, no persistent WS needed. Verified live 2026-08-13 (byte-for-byte match with the WS frame, incl. battery/range). Reported by [@jebentancour](https://github.com/jebentancour) in [#5](https://github.com/GodrezJr2/openlinko/issues/5) |
+| GET | **`/user/vehicle/isOnline/{vehicleId}`** | Car reachable (bool) | `{"data":true}` / `false`; same signing. Also [#5](https://github.com/GodrezJr2/openlinko/issues/5) |
 | POST | **`/user/vehicle/remoteControl`** | **CONTROL the car** | body `{vehicleId, deviceSn, data:"<hexcmd>", timeOut:20}`. See control. |
 
 ## Remote control
@@ -455,7 +455,7 @@ a client tells by the field being present and by the route answering.
 
 ## Standalone access — VALIDATED ✅
 
-`tools/ws_client.py`: a host-side Python client connects to the WS with **only the token**
+`research/ws_client.py`: a host-side Python client connects to the WS with **only the token**
 (WS login takes `{action:1,data:{token,vehicleId}}` — **no signature**), requests
 `{action:6}`, and decodes the blob. Confirmed against the app dashboard:
 
@@ -464,7 +464,7 @@ a client tells by the field being present and by the route answering.
 | `doors` | byte 2 | bitmask: `1`=driver, `2`=passenger, `4`=rear-driver, `8`=rear-passenger (live per-door test, E5, #5) |
 | `unlocked` | byte 3 | **LOCK state: `0`=locked, `!=0`=unlocked.** VERIFIED ✅ — live lock/unlock test on the Omoda E5 (#5) *and* J5 data: 217 parked 0→1 flips, and the byte lingers at 1 for a median 105 s after driving stops (the walk-away-and-lock delay). Previously mistaken for ignition |
 | `trunk_open` | byte 4 | 0 = closed (E5-verified, #5) |
-| `windows` / `window_state` | byte 8 | 2 bits per window, MSB → LSB: driver, passenger, rear-driver, rear-passenger. `00` = closed, `01` = open, `10` = partially open (`11` never seen). `0x00` = all closed, `0x55` = all open, `0xAA` = all half-open. Live-verified window by window on the E5 ([#15](https://github.com/GodrezJr2/j5-ev-dashboard/issues/15)); `window_state` is the decoded list |
+| `windows` / `window_state` | byte 8 | 2 bits per window, MSB → LSB: driver, passenger, rear-driver, rear-passenger. `00` = closed, `01` = open, `10` = partially open (`11` never seen). `0x00` = all closed, `0x55` = all open, `0xAA` = all half-open. Live-verified window by window on the E5 ([#15](https://github.com/GodrezJr2/openlinko/issues/15)); `window_state` is the decoded list |
 | `sunroof_open` / `sunroof` | byte 9 | enum: `0x00` = closed, `0x08` = open (slid back), `0x0B` = tilted/vent (E5 live, #15). Other values are passed through raw |
 | `volt12` | bytes 12–13 (BE u16 ×0.01) | 13.84 V |
 | `speed_kmh` | bytes 14–15 (BE u16 ÷16) | raw 320 = 20 km/h |
@@ -483,13 +483,13 @@ a client tells by the field being present and by the route answering.
 | tyre block (4 pressure + 4 temp) | bytes 44–51 | `FF` on indirect TPMS (J5); real values on direct TPMS. temp = `raw × 0.65 − 40` |
 | `fuel_l_100` **(PHEV)** | byte 53 (×0.1) | 0.8 L/100 km — `0` on every BEV frame |
 | `consumption` | bytes 54–55 | signed 12-bit: `mode = b54 >> 4`, `mag = (b54 & 0x0F) << 8 \| b55`, value = `mag × 0.1 − (100 if mode == 1)`. On a BEV b54 = 0, so it is `b55 × 0.1` (12.4 kWh/100 km, matches the J5 dash). Decoded in #15; it reproduces both Tiggo 8 PHEV dash readings exactly |
-| `charge_mode` | byte 56 | connector: `0`=none, `1`=AC, `16`=DC fast. [#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5) |
+| `charge_mode` | byte 56 | connector: `0`=none, `1`=AC, `16`=DC fast. [#5](https://github.com/GodrezJr2/openlinko/issues/5) |
 | `charge_state` | byte 57 | `0`=idle, `1`=charging, `2`=complete, `3`=canceled, `4`=hot, `5`=stop-charging |
 | `charge_remain_min` | bytes 58–59 (BE u16) | minutes to done; exactly `0x3FE`/`0x3FF`/`0x7FE`/`0x7FF` = invalid (CarLinko's own `chargingTimeInvalidValue`). Not `>= 0x3FE`: a slow AC charge can need 1022+ min (#15) |
 | `charge_power_kw` | bytes 62–63 (BE u16 ×0.1) | instant power; 62 is the overflow byte past 25.5 kW. `0` when idle. ⚠️ **Bidirectional**: the same pair carries **regen power while braking** — gate on b57 (`!= idle`) before calling it charge power (E5-verified, #5). J5 too: 5–30 kW on every SoC tick-up down the Puncak descent (1 Nov 2026) with b56 = b57 = 0. The daily regen figure (`day_regen`) therefore tells charging apart by b56/b57, never by this pair |
 | `wltc_range_km` | bytes 68–69 (BE u16) | **rated (WLTC) range** — *not* a mirror of EV range. See below |
 | headline range | bytes 70–71 (BE u16) | EV range on a BEV (mirrors `range_km`); **fuel range** on a PHEV (652 km) |
-| `hv_state` | byte 5 | HV/motor state per [#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5) (`>=2` = on). E5 live data: **0=off, 1=low-voltage (15–90 s power on/off transition), 2=high-voltage/ready** — `2` in 100 % of driving samples. On the J5 the byte takes 0–3 with `2` dominant even parked, so treat as model-specific. The E5 owner reads it simply as `!=0` = car active |
+| `hv_state` | byte 5 | HV/motor state per [#5](https://github.com/GodrezJr2/openlinko/issues/5) (`>=2` = on). E5 live data: **0=off, 1=low-voltage (15–90 s power on/off transition), 2=high-voltage/ready** — `2` in 100 % of driving samples. On the J5 the byte takes 0–3 with `2` dominant even parked, so treat as model-specific. The E5 owner reads it simply as `!=0` = car active |
 
 ### The platform hands you the per-model constants
 
@@ -510,13 +510,13 @@ can configure itself:
 
 PHEV offsets come from three Chery Tiggo 8 PHEV frames contributed by
 [@wbrocker](https://github.com/wbrocker) in
-[#2](https://github.com/GodrezJr2/j5-ev-dashboard/issues/2), cross-checked against 13,018+ logged
+[#2](https://github.com/GodrezJr2/openlinko/issues/2), cross-checked against 13,018+ logged
 J5 (BEV) frames where bytes 21, 53 and 54 are `0` in every single one.
 
 ### Charging block + rated range — VERIFIED ✅ (bytes 5, 23, 56–59, 62–63, 68–69)
 
 Contributed by [@jebentancour](https://github.com/jebentancour) (Omoda E5 BEV, Uruguay) in
-[#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5) and verified here against three other
+[#5](https://github.com/GodrezJr2/openlinko/issues/5) and verified here against three other
 cars' data before shipping:
 
 - **J5 EV (ID)** — 72,507 logged frames, including 1,392 DC-charging frames.

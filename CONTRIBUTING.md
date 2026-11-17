@@ -11,9 +11,9 @@ their own vehicle.
 
 ## Good first contributions
 
-- **Confirm compatibility.** Run it on your car and open a
-  [compatibility report](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md):
-  model, region, what worked, what didn't. This is the single most useful thing right now — it tells
+- **Add your car.** Run it on your car, copy the report from **Account → Report my car** and open an
+  [Add my car](https://github.com/GodrezJr2/openlinko/issues/new?template=add-car.yml) issue:
+  the report plus what your car's own screen shows, and what worked or didn't. This is the single most useful thing right now — it tells
   us which byte offsets and assumptions hold beyond the J5.
 - **Fix a telemetry offset** for a different model (battery / range / odometer live at fixed byte
   positions in `tools/server.py` → `decode()`; they may differ on other cars).
@@ -42,4 +42,4 @@ their own vehicle.
 - This is reverse-engineering for **personal, interoperability** use. Don't add anything that
   attacks CarLinko's infrastructure, scrapes other users' data, or abuses the API at scale.
 
-Questions? Open a [Discussion](https://github.com/GodrezJr2/j5-ev-dashboard/discussions).
+Questions? Open a [Discussion](https://github.com/GodrezJr2/openlinko/discussions).

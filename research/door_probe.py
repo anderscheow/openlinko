@@ -10,8 +10,8 @@ This script closes that gap. Run it, walk to the car, and open one door at a tim
 change to the mask with a timestamp, so the corner you just opened can be matched to the bit that
 just flipped.
 
-    python tools/door_probe.py                        # uses the Tailscale address
-    python tools/door_probe.py http://127.0.0.1:8088  # or run it on the server itself
+    python research/door_probe.py                        # uses the Tailscale address
+    python research/door_probe.py http://127.0.0.1:8088  # or run it on the server itself
 
 Polling /api/summary is a pure DB read -- it does not open a second CarLinko socket, so it will
 not fight the streaming logger. Do not point this at /api/refresh.
