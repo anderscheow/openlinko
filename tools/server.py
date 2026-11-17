@@ -488,6 +488,14 @@ def _control_data(opcode):
         import sys; print("control encrypt failed:", e, file=sys.stderr)
     return opcode   # fall back to plain (fails visibly with __7404) rather than crash
 
+def _frame_kind(opcode, data):
+    """How `data` left the server, for the control log: `enc` (AES frame), `plain` (a 74xx sent in
+    the clear: unverified model, or the encrypt fallback) or `init` (2301/24/77, plain by design).
+    A refusal reads differently for each, and the reply alone does not say which one was sent."""
+    if data != opcode:
+        return "enc"
+    return "plain" if opcode.lower().startswith("74") else "init"
+
 def send_control(opcode, timeout=20):
     """Forge the exact POST /user/vehicle/remoteControl the app sends. timeOut is signed as a
     NUMBER (not a string) to match the app's jsonEncode, else the server rejects the signature.
@@ -500,7 +508,9 @@ def send_control(opcode, timeout=20):
         return {"code": "-1", "msg": "vehicle_id / device_sn missing from creds.json"}
     try: timeout = int(timeout)
     except Exception: timeout = 20
-    body = {"vehicleId": vid, "deviceSn": dsn, "data": _control_data(str(opcode)), "timeOut": timeout}
+    data = _control_data(str(opcode))
+    frame = _frame_kind(str(opcode), data)
+    body = {"vehicleId": vid, "deviceSn": dsn, "data": data, "timeOut": timeout}
     def _post(tok):
         ts = auth.now_ms()
         ordered = {k: v for k, v in sorted({**body, "timestamp": ts}.items())}
@@ -518,19 +528,25 @@ def send_control(opcode, timeout=20):
     if relogin:
         try: d = _post(auth.login())
         except Exception as e: d = {"code": "-1", "msg": f"relogin failed: {e}"}
-    LOG.info("control %s -> code=%s reply=%s msg=%s in %d ms%s", opcode, d.get("code"),
-             _reply_tail(d), str(d.get("msg") or "")[:60], (time.time() - t0) * 1000,
-             " (after relogin)" if relogin else "")
+    LOG.info("control %s -> code=%s frame=%s reply=%s msg=%s in %d ms%s%s", opcode, d.get("code"),
+             frame, _reply_tail(d), str(d.get("msg") or "")[:60], (time.time() - t0) * 1000,
+             " (after relogin)" if relogin else "", _reply_extras(d))
     return d
 
 def _reply_tail(d):
     """The gateway's reply payload for the log, without the device serial it is prefixed with
-    (`<sn>__7411AC00`). A payload with no `__` separator is reported by length only."""
+    (`<sn>__7411AC00`). A payload with no `__` separator is reported by length only. The cap only
+    bounds a runaway line: the longest reply seen (the `77` state frame) is 48 characters."""
     data = d.get("data")
     if data in (None, ""):
         return "none"
     data = str(data)
-    return data.rsplit("__", 1)[-1][:48] if "__" in data else "len=%d" % len(data)
+    return data.rsplit("__", 1)[-1][:128] if "__" in data else "len=%d" % len(data)
+
+def _reply_extras(d):
+    """Names, never values, of any reply field beyond code/msg/data, so one CarLinko adds shows up."""
+    extra = sorted(set(d) - {"code", "msg", "data"})
+    return " extra=%s" % ",".join(map(str, extra)) if extra else ""
 
 def _ack_status(op, d):
     """Status byte of a command ack. For a 74xx/78xx command CarLinko echoes the opcode and appends
