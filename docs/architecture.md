@@ -27,4 +27,4 @@
 
 ## Contributing
 
-A [compatibility report](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md) (does it work on your car and region?) is the most useful contribution. See [CONTRIBUTING.md](../CONTRIBUTING.md) and [SECURITY.md](../SECURITY.md). Questions go to [Discussions](https://github.com/GodrezJr2/j5-ev-dashboard/discussions).
+A [compatibility report](https://github.com/GodrezJr2/openlinko/issues/new?template=compatibility.md) (does it work on your car and region?) is the most useful contribution. See [CONTRIBUTING.md](../CONTRIBUTING.md) and [SECURITY.md](../SECURITY.md). Questions go to [Discussions](https://github.com/GodrezJr2/openlinko/discussions).

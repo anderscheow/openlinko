@@ -30,7 +30,7 @@ services:
   push-dispatcher:
     profiles: [push]
     build: .
-    image: j5-ev-dashboard
+    image: openlinko
     command: python push_dispatcher.py
     volumes:
       - ./data:/data

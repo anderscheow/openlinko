@@ -1,4 +1,4 @@
-# CarLinko → j5-ev-dashboard feature parity (CarLinko v1.14.0)
+# CarLinko → OpenLinko feature parity (CarLinko v1.14.0)
 
 Static RE pass to answer one question: **what can the CarLinko app do that the
 dashboard does not yet replicate?** Derived from the shipped v1.14.0 Android

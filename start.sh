@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# J5 EV Dashboard - start it locally on macOS or Linux (the counterpart of start.bat).
+# OpenLinko - start it locally on macOS or Linux (the counterpart of start.bat).
 #
 #   ./start.sh                 dashboard + telemetry logger on http://localhost:8088
 #   ./start.sh --demo          fake data: no account, no car, no logger
@@ -119,7 +119,7 @@ fi
 
 IP=$(lan_ip)
 echo
-if [ "$DEMO" = 1 ]; then echo "  J5 EV Dashboard - demo data"; else echo "  J5 EV Dashboard"; fi
+if [ "$DEMO" = 1 ]; then echo "  OpenLinko - demo data"; else echo "  OpenLinko"; fi
 echo "  In Voltmoss, type the address with http:// (the app assumes https otherwise):"
 echo "    This Mac / iOS Simulator   http://localhost:$PORT"
 echo "    Android emulator           http://10.0.2.2:$PORT"

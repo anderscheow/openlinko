@@ -19,7 +19,7 @@ Product rationale is in [PRODUCT.md](../PRODUCT.md), the visual system in [DESIG
 
 Confirmed on four cars: Jaecoo J5 EV (Indonesia), Chery Tiggo 8 PHEV (South Africa), Chery Tiggo 7 PHEV (Malaysia) and Omoda E5 (Uruguay). Telemetry byte offsets were identical on all of them, so the layout appears to come from the CarLinko platform, not the model. Per-model values (tyre scale, powertrain, car photo) are read from the API at setup. Settings per car are in [Configuration → Known cars](configuration.md#known-cars).
 
-Caveat: Jaecoo, Omoda, Exeed and Chery are all Chery Group brands, and CarLinko is Chery Group's app. Four cars is a strong signal, not proof; unmapped bytes may differ, and no pure-ICE car has been tried. If your car isn't listed, please file a [compatibility report](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md).
+Caveat: Jaecoo, Omoda, Exeed and Chery are all Chery Group brands, and CarLinko is Chery Group's app. Four cars is a strong signal, not proof; unmapped bytes may differ, and no pure-ICE car has been tried. If your car isn't listed, please file a [compatibility report](https://github.com/GodrezJr2/openlinko/issues/new?template=compatibility.md).
 
 ## Demo
 

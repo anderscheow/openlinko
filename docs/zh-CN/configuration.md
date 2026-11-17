@@ -9,7 +9,7 @@
 | 键 | 必填 | 说明 |
 | --- | --- | --- |
 | `email`, `password` | ✅ | 你的 CarLinko 登录信息（经 TLS 以明文传输；仅保存在本地） |
-| `region` | | API 区域，默认 `sea`（东南亚）。**区域错误会导致登录失败**——在欧洲/中东/非洲注册的账号需要 `emea`（以色列的 J5 Noble 曾报告此问题，[#6](https://github.com/GodrezJr2/j5-ev-dashboard/issues/6)）。如果密码正确却被拒绝，请先尝试其他区域，再排查别的原因 |
+| `region` | | API 区域，默认 `sea`（东南亚）。**区域错误会导致登录失败**——在欧洲/中东/非洲注册的账号需要 `emea`（以色列的 J5 Noble 曾报告此问题，[#6](https://github.com/GodrezJr2/openlinko/issues/6)）。如果密码正确却被拒绝，请先尝试其他区域，再排查别的原因 |
 | `vehicle_id`, `device_sn` | 自动 | 车辆 ID 和设备序列号——**`setup.py` 会替你填写** |
 | `vehicle` | 自动 | `{plate, model, vin}`——自动识别；界面默认隐藏车牌和 VIN |
 | `battery_kwh`, `wltp_kwh_100` | | 可用电池容量和 WLTP 参考值。**车辆不会上报电池容量**，因此取值来自你本人或[已知车型表](#已知车型)；未识别的车型会在设置时询问，并在你设定之前于界面中标注为*假定值*。它会缩放所有 kWh、费用和能耗数据 |
@@ -37,16 +37,16 @@
 
 ## 已知车型
 
-其他车主已确认的设置。欢迎通过[兼容性报告](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md)添加你的车。
+其他车主已确认的设置。欢迎通过[兼容性报告](https://github.com/GodrezJr2/openlinko/issues/new?template=compatibility.md)添加你的车。
 
 这些设置会根据识别到的车型**自动应用**——表格位于 [`tools/known_cars.py`](../../tools/known_cars.py)，你在 `creds.json` 中设置的内容仍然优先。
 
 | 车型 | `battery_kwh` | `tpms_scale` | `tyre_unit` | 备注 |
 | --- | --- | --- | --- | --- |
 | Jaecoo J5 EV (ID) | `58.9` | n/a | `psi` | 参考车型。*间接式* TPMS——只上报轮胎**状态**，从不上报胎压 |
-| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | 直接式 TPMS（原始值 `136` = 2.42 bar）。PHEV——油量、油耗和燃油续航均已解码（[#2](https://github.com/GodrezJr2/j5-ev-dashboard/issues/2)） |
-| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | 电池包和胎压换算与 Tiggo 8 PHEV 相同，已独立确认（[#3](https://github.com/GodrezJr2/j5-ev-dashboard/issues/3)）。马来西亚将其标为 **`TIGGO 7 CSH`**——自动匹配 |
-| Omoda E5 2025 (UY) | `61` | — | — | LFP，WLTP 15.5 kWh/100 km——车主已确认（[#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5)）。登录、自动识别和充电等一切正常 |
+| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | 直接式 TPMS（原始值 `136` = 2.42 bar）。PHEV——油量、油耗和燃油续航均已解码（[#2](https://github.com/GodrezJr2/openlinko/issues/2)） |
+| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | 电池包和胎压换算与 Tiggo 8 PHEV 相同，已独立确认（[#3](https://github.com/GodrezJr2/openlinko/issues/3)）。马来西亚将其标为 **`TIGGO 7 CSH`**——自动匹配 |
+| Omoda E5 2025 (UY) | `61` | — | — | LFP，WLTP 15.5 kWh/100 km——车主已确认（[#5](https://github.com/GodrezJr2/openlinko/issues/5)）。登录、自动识别和充电等一切正常 |
 
 **如果你的车不在列表中**，不会替你编造任何数据：`setup.py` 会询问电池容量，在你设置之前电池卡片会标注为*假定值*，规格卡片也会保持隐藏，而不是显示别的车的宣传册数据。
 

@@ -69,7 +69,7 @@ on a live car (that's what the Control tab tester is for).
 | Find car | `740400` | ✅ runtime-confirmed, acked `74040000` (Tiggo 7 CSH, 2026-10-22). It is the app's **Search** button (`vehicle_locate`), not a map lookup |
 | Sunroof close / open / tilt | `740F00` / `740F01` / `740F02` | static decode (no sunroof on J5 — needs Omoda 9 / Noble) |
 | Engine on / off | `740700` / `740800` | static decode, pending |
-| A/C on / off | `741001` / `741000` | ✅ runtime-confirmed (J5 EV Noble, IL, 2026-09-04 — @idoeilon, [#6](https://github.com/GodrezJr2/j5-ev-dashboard/issues/6)) |
+| A/C on / off | `741001` / `741000` | ✅ runtime-confirmed (J5 EV Noble, IL, 2026-09-04 — @idoeilon, [#6](https://github.com/GodrezJr2/openlinko/issues/6)) |
 | A/C set temperature | `7411` + one byte = `0x80 + 2×°C` (`7411AC` = 22.0, `7411AD` = 22.5, `7411AE` = 23.0) | ✅ app capture + plain-opcode replay acked `7411AC00` (Tiggo 7 CSH, 2026-10-22). The app's first try was acked `7411AD44`; it then sent `7801` and retried to get `…00`, so a non-`00` trailing byte means "not applied". Range/step come from `vehicleControlConfig` (J5: 15.5–30.5, 0.5). The J5 status byte 24 uses the same half-degree encoding |
 | Front defog on / off | `741201` / `741200` | static decode, pending |
 | Seat heat L1–L3 / off — left, right, left-rear, right-rear | `741501–03`/`00`, `741601–03`/`00`, `741701–03`/`00`, `741901–03`/`00` | `741501` (left, level I) + `741500` (off) ✅ app capture + replay (Tiggo 7 CSH, 2026-10-22); rest static decode (no seat heat on J5: `DriverHeater`/`AssistantHeater` false) |

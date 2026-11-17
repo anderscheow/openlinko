@@ -9,7 +9,7 @@ Halaman login dashboard dan `tools/setup.py` mengisi sebagian besar pengaturan s
 | key | wajib | keterangan |
 | --- | --- | --- |
 | `email`, `password` | ✅ | login CarLinko-mu (plaintext lewat TLS; hanya disimpan lokal) |
-| `region` | | region API, default `sea` (Asia Tenggara). **Login gagal kalau region salah** — akun yang dibuat di Eropa/Timur Tengah/Afrika butuh `emea` (dilaporkan pada J5 Noble di Israel, [#6](https://github.com/GodrezJr2/j5-ev-dashboard/issues/6)). Kalau password benar tapi ditolak, coba region lain dulu sebelum yang lain |
+| `region` | | region API, default `sea` (Asia Tenggara). **Login gagal kalau region salah** — akun yang dibuat di Eropa/Timur Tengah/Afrika butuh `emea` (dilaporkan pada J5 Noble di Israel, [#6](https://github.com/GodrezJr2/openlinko/issues/6)). Kalau password benar tapi ditolak, coba region lain dulu sebelum yang lain |
 | `vehicle_id`, `device_sn` | otomatis | id kendaraan + serial perangkat — **`setup.py` mengisinya untukmu** |
 | `vehicle` | otomatis | `{plate, model, vin}` — terdeteksi otomatis; UI menyembunyikan plat dan VIN secara default |
 | `battery_kwh`, `wltp_kwh_100` | | kapasitas pack yang terpakai + acuan WLTP. **Mobil tidak pernah melaporkan ukuran pack**, jadi nilainya dari kamu atau dari [tabel mobil yang dikenal](#mobil-yang-dikenal); model yang belum dikenal ditanyakan saat setup dan diberi label *assumed* di UI sampai kamu mengaturnya. Nilai ini menskalakan semua angka kWh, biaya, dan efisiensi |
@@ -37,16 +37,16 @@ Halaman login dashboard dan `tools/setup.py` mengisi sebagian besar pengaturan s
 
 ## Mobil yang dikenal
 
-Pengaturan yang sudah dikonfirmasi pemilik lain. Tambahkan mobilmu lewat [laporan kompatibilitas](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md).
+Pengaturan yang sudah dikonfirmasi pemilik lain. Tambahkan mobilmu lewat [laporan kompatibilitas](https://github.com/GodrezJr2/openlinko/issues/new?template=compatibility.md).
 
 Pengaturan ini **diterapkan otomatis** dari model yang terdeteksi — tabelnya ada di [`tools/known_cars.py`](../../tools/known_cars.py), dan apa pun yang kamu set di `creds.json` tetap menang.
 
 | Mobil | `battery_kwh` | `tpms_scale` | `tyre_unit` | Catatan |
 | --- | --- | --- | --- | --- |
 | Jaecoo J5 EV (ID) | `58.9` | n/a | `psi` | Mobil acuan. TPMS *tidak langsung* — hanya melaporkan **status** ban, tidak pernah tekanan |
-| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | TPMS langsung (mentah `136` = 2,42 bar). PHEV — level bahan bakar, konsumsi bahan bakar, dan jarak tempuh bahan bakar semuanya sudah didecode ([#2](https://github.com/GodrezJr2/j5-ev-dashboard/issues/2)) |
-| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | Pack dan skala ban sama dengan Tiggo 8 PHEV, dikonfirmasi secara independen ([#3](https://github.com/GodrezJr2/j5-ev-dashboard/issues/3)). Malaysia menamainya **`TIGGO 7 CSH`** — cocok otomatis |
-| Omoda E5 2025 (UY) | `61` | — | — | LFP, WLTP 15,5 kWh/100 km — dikonfirmasi pemilik ([#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5)). Semua berfungsi termasuk login, deteksi otomatis, dan pengisian |
+| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | TPMS langsung (mentah `136` = 2,42 bar). PHEV — level bahan bakar, konsumsi bahan bakar, dan jarak tempuh bahan bakar semuanya sudah didecode ([#2](https://github.com/GodrezJr2/openlinko/issues/2)) |
+| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | Pack dan skala ban sama dengan Tiggo 8 PHEV, dikonfirmasi secara independen ([#3](https://github.com/GodrezJr2/openlinko/issues/3)). Malaysia menamainya **`TIGGO 7 CSH`** — cocok otomatis |
+| Omoda E5 2025 (UY) | `61` | — | — | LFP, WLTP 15,5 kWh/100 km — dikonfirmasi pemilik ([#5](https://github.com/GodrezJr2/openlinko/issues/5)). Semua berfungsi termasuk login, deteksi otomatis, dan pengisian |
 
 **Kalau mobilmu tidak terdaftar**, tidak ada yang dikarang atas namamu: `setup.py` menanyakan ukuran pack, kartu baterai memberi label *assumed* sampai kamu mengaturnya, dan kartu spesifikasi tetap tersembunyi daripada menampilkan angka brosur mobil lain.
 

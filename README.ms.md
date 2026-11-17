@@ -1,4 +1,4 @@
-# J5 EV Dashboard
+# OpenLinko
 
 [English](README.md) · [Bahasa Indonesia](README.id.md) · [简体中文](README.zh-CN.md) · **Bahasa Melayu**
 

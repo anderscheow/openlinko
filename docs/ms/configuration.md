@@ -9,7 +9,7 @@ Halaman log masuk dashboard dan `tools/setup.py` mengisi kebanyakan tetapan seca
 | kunci | wajib | keterangan |
 | --- | --- | --- |
 | `email`, `password` | ✅ | log masuk CarLinko anda (teks biasa melalui TLS; disimpan secara setempat sahaja) |
-| `region` | | rantau API, lalai `sea` (Asia Tenggara). **Log masuk gagal jika rantau salah** — akaun yang dibuat di Eropah/Timur Tengah/Afrika memerlukan `emea` (dilaporkan pada J5 Noble di Israel, [#6](https://github.com/GodrezJr2/j5-ev-dashboard/issues/6)). Jika kata laluan betul tetapi ditolak, cuba rantau lain dahulu sebelum perkara lain |
+| `region` | | rantau API, lalai `sea` (Asia Tenggara). **Log masuk gagal jika rantau salah** — akaun yang dibuat di Eropah/Timur Tengah/Afrika memerlukan `emea` (dilaporkan pada J5 Noble di Israel, [#6](https://github.com/GodrezJr2/openlinko/issues/6)). Jika kata laluan betul tetapi ditolak, cuba rantau lain dahulu sebelum perkara lain |
 | `vehicle_id`, `device_sn` | auto | ID kenderaan + nombor siri peranti — **`setup.py` mengisinya untuk anda** |
 | `vehicle` | auto | `{plate, model, vin}` — dikesan secara automatik; UI menyembunyikan plat dan VIN secara lalai |
 | `battery_kwh`, `wltp_kwh_100` | | saiz bateri boleh guna + rujukan WLTP. **Kereta tidak pernah melaporkan saiz bateri**, jadi nilainya datang daripada anda atau [jadual kereta yang dikenali](#kereta-yang-dikenali); model yang tidak dikenali ditanya semasa persediaan dan dilabel *assumed* dalam UI sehingga anda menetapkannya. Ia menskalakan setiap angka kWh, kos dan kecekapan |
@@ -37,16 +37,16 @@ Halaman log masuk dashboard dan `tools/setup.py` mengisi kebanyakan tetapan seca
 
 ## Kereta yang dikenali
 
-Tetapan yang telah disahkan oleh pemilik lain. Sila tambah kereta anda melalui [laporan keserasian](https://github.com/GodrezJr2/j5-ev-dashboard/issues/new?template=compatibility.md).
+Tetapan yang telah disahkan oleh pemilik lain. Sila tambah kereta anda melalui [laporan keserasian](https://github.com/GodrezJr2/openlinko/issues/new?template=compatibility.md).
 
 Tetapan ini **digunakan secara automatik** daripada model yang dikesan — jadualnya terdapat dalam [`tools/known_cars.py`](../../tools/known_cars.py), dan apa-apa yang anda tetapkan dalam `creds.json` tetap diutamakan.
 
 | Kereta | `battery_kwh` | `tpms_scale` | `tyre_unit` | Nota |
 | --- | --- | --- | --- | --- |
 | Jaecoo J5 EV (ID) | `58.9` | n/a | `psi` | Kereta rujukan. TPMS *tidak langsung* — hanya melaporkan **status** tayar, tidak pernah tekanan |
-| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | TPMS langsung (mentah `136` = 2.42 bar). PHEV — paras bahan api, penggunaan bahan api dan jarak bahan api semuanya telah dinyahkod ([#2](https://github.com/GodrezJr2/j5-ev-dashboard/issues/2)) |
-| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | Pek bateri dan skala tayar sama dengan Tiggo 8 PHEV, disahkan secara bebas ([#3](https://github.com/GodrezJr2/j5-ev-dashboard/issues/3)). Malaysia melabelnya **`TIGGO 7 CSH`** — dipadankan secara automatik |
-| Omoda E5 2025 (UY) | `61` | — | — | LFP, WLTP 15.5 kWh/100 km — disahkan pemilik ([#5](https://github.com/GodrezJr2/j5-ev-dashboard/issues/5)). Semuanya berfungsi termasuk log masuk, pengesanan automatik dan pengecasan |
+| Chery Tiggo 8 PHEV 2025 (ZA) | `18.3` | `1.779` | `bar` | TPMS langsung (mentah `136` = 2.42 bar). PHEV — paras bahan api, penggunaan bahan api dan jarak bahan api semuanya telah dinyahkod ([#2](https://github.com/GodrezJr2/openlinko/issues/2)) |
+| Chery Tiggo 7 PHEV (MY) | `18.3` | `1.779` | `psi` | Pek bateri dan skala tayar sama dengan Tiggo 8 PHEV, disahkan secara bebas ([#3](https://github.com/GodrezJr2/openlinko/issues/3)). Malaysia melabelnya **`TIGGO 7 CSH`** — dipadankan secara automatik |
+| Omoda E5 2025 (UY) | `61` | — | — | LFP, WLTP 15.5 kWh/100 km — disahkan pemilik ([#5](https://github.com/GodrezJr2/openlinko/issues/5)). Semuanya berfungsi termasuk log masuk, pengesanan automatik dan pengecasan |
 
 **Jika kereta anda tiada dalam senarai**, tiada apa yang direka bagi pihak anda: `setup.py` bertanya saiz bateri, kad bateri melabelnya *assumed* sehingga anda menetapkannya, dan kad spesifikasi kekal tersembunyi dan bukannya memaparkan angka brosur kereta lain.
 
