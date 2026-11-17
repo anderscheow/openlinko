@@ -66,10 +66,14 @@ class ControlLogTest(unittest.TestCase):
         line, _ = self.fire("741001", {"code": "0000", "msg": "OK", "data": "SN-SECRET__74100144"})
         self.assertNotIn("SN-SECRET", line)
 
-    def test_a_long_reply_is_logged_whole(self):
-        payload = "AB" * 40                                     # 80 chars, past the old 48 cut
+    def test_a_state_frame_sized_reply_is_logged_whole(self):
+        payload = "AB" * 73                                     # 73 bytes: past the old 48 and 128 cuts
         line, _ = self.fire("77", {"code": "0000", "msg": "OK", "data": "SN-SECRET__" + payload})
         self.assertIn("reply=" + payload + " ", line)
+
+    def test_a_runaway_reply_is_still_bounded(self):
+        line, _ = self.fire("77", {"code": "0000", "msg": "OK", "data": "SN-SECRET__" + "AB" * 2000})
+        self.assertLess(len(line), 800)
 
     def test_an_unknown_reply_field_is_named_but_its_value_is_not_logged(self):
         line, _ = self.fire("741001", {"code": "0000", "msg": "OK", "data": "SN-SECRET__74100100",

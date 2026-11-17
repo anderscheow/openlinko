@@ -536,12 +536,13 @@ def send_control(opcode, timeout=20):
 def _reply_tail(d):
     """The gateway's reply payload for the log, without the device serial it is prefixed with
     (`<sn>__7411AC00`). A payload with no `__` separator is reported by length only. The cap only
-    bounds a runaway line: the longest reply seen (the `77` state frame) is 48 characters."""
+    bounds a runaway line: the `77` state reply is at least 128 characters (the first 48-character
+    cut of this log hid most of it), and the telemetry frame it resembles is 73 bytes = 146."""
     data = d.get("data")
     if data in (None, ""):
         return "none"
     data = str(data)
-    return data.rsplit("__", 1)[-1][:128] if "__" in data else "len=%d" % len(data)
+    return data.rsplit("__", 1)[-1][:512] if "__" in data else "len=%d" % len(data)
 
 def _reply_extras(d):
     """Names, never values, of any reply field beyond code/msg/data, so one CarLinko adds shows up."""
