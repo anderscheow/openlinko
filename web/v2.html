@@ -411,6 +411,18 @@
     transition:transform var(--t-fast) var(--eo),opacity var(--t-mid) linear}
   .bigbtn:active{transform:scale(.985)}
   .bigbtn:disabled{opacity:.35}
+  .locmap{height:320px;border-radius:var(--r3);overflow:hidden;box-shadow:var(--sh-1);background:var(--card-2);z-index:0}
+  .locbtns{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-top:var(--s4)}
+  .locbtns .bigbtn{margin-top:0;text-align:center;text-decoration:none}
+  .bigbtn.alt{background:var(--card);color:var(--ink);box-shadow:var(--sh-1)}
+  .locpin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:#fff;font:800 11px/1 system-ui,sans-serif;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+  .lochead{margin:var(--s6) 2px var(--s3);font-size:12.5px;font-weight:700;color:var(--mut);
+    text-transform:uppercase;letter-spacing:.05em}
+  :root[data-theme="dark"] #locMap .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) #locMap .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9)}
+  }
 
   /* A/C page */
   .acbig{display:flex;align-items:center;justify-content:center;gap:var(--s6);margin:var(--s6) 0 var(--s2)}
@@ -969,6 +981,8 @@ MOTION: one ease token, 140/220/320ms, transform and opacity only, prefers-reduc
   <div class="pbody" id="pgChgBody"></div></div>
 <div class="page" id="pgDist" data-k="dist"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Distance</h2></div>
   <div class="pbody" id="pgDistBody"></div></div>
+<div class="page" id="pgLoc" data-k="loc"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Location</h2></div>
+  <div class="pbody" id="pgLocBody"></div></div>
 <div class="page" id="pgFlex" data-k="flex"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Share card</h2></div>
   <div class="pbody" id="pgFlexBody"></div></div>
 <div class="page" id="pgPlan" data-k="plan"><div class="phead"><button class="pback" data-close aria-label="Back"><svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 1L2 10l8 9"/></svg></button><h2>Charge calculator</h2></div>
@@ -1535,6 +1549,7 @@ function renderCards(){
   $('rowsHost').innerHTML = '<div class="rowcard">' +
     row('chart', 'Energy consumption', cons, '', 'energy') +
     row('car',   'Distance',  distSub, '', 'dist') +
+    (locOn() ? row('find', 'Location', locSub(), '', 'loc') : '') +
     row('seat',  'Seats', seatsKnown ? 'Active' : (seatCaps ? 'Off' : 'Not available'), '',
         seatCaps ? 'ac' : null) +
     row('list',  'Activity', 'Commands and alerts', '', 'activity') +
@@ -2552,6 +2567,129 @@ function shiftMonth(dir){
   renderDist();
 }
 
+// ---- location (opt-in: "location": true in creds.json; the logger stores CarLinko's position) ----
+// Read-only: api/location + api/route only read what the logger stored; nothing here calls CarLinko.
+// Leaflet is loaded the first time the page opens, so the home screen stays as light as before.
+const LOCV = {d: null, next: 0, map: null, layer: null, route: null};
+function locOn(){ const d = LOCV.d; return !!(d && d.enabled && typeof d.lat === 'number' && typeof d.lng === 'number'); }
+function locAgo(s){ return s == null ? '' : s < 90 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago'
+  : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; }
+function locSub(){ const d = LOCV.d; return (d.moving ? 'Moving' : 'Parked') + ' · ' + locAgo(d.age_s); }
+async function locFetch(){
+  if(LOCV.d && !LOCV.d.enabled && Date.now() < LOCV.next) return;      // off: re-check every 5 min
+  const first = !LOCV.d;
+  let d; try{ d = await api('api/location'); }catch(e){ return; }
+  if(!d || typeof d !== 'object') return;
+  const was = locOn(); LOCV.d = d;
+  if(!d.enabled) LOCV.next = Date.now() + 300000;
+  if(S && (was !== locOn() || locOn())) renderCards();                 // show/hide/refresh the home row
+  if(openKey === 'loc'){ if(first) renderLoc(); else if(!LOCV.route) locShowCar(false); }
+}
+let leafletP = null;
+function needLeaflet(){
+  if(window.L) return Promise.resolve();
+  if(!leafletP) leafletP = new Promise((ok, no) => {
+    const c = document.createElement('link'); c.rel = 'stylesheet'; c.href = 'leaflet.css'; document.head.appendChild(c);
+    const j = document.createElement('script'); j.src = 'leaflet.js'; j.onload = ok;
+    j.onerror = () => { leafletP = null; no(); }; document.head.appendChild(j);
+  });
+  return leafletP;
+}
+function locPlatform(){ const ua = navigator.userAgent || '';
+  if(/Android/i.test(ua)) return 'android';
+  if(/iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  return 'desktop'; }
+// Navigate: hand the destination to the OS rather than naming apps (Android chooser / iOS maps / web)
+function locLinks(lat, lng){
+  const a = $('locNav'); if(!a) return;
+  const q = lat.toFixed(6) + ',' + lng.toFixed(6), pf = locPlatform();
+  if(pf === 'android'){ a.href = 'geo:' + q + '?q=' + q + '(' + encodeURIComponent('My car') + ')'; a.removeAttribute('target'); }
+  else if(pf === 'ios'){ a.href = 'https://maps.apple.com/?daddr=' + q + '&dirflg=d'; a.target = '_blank'; }
+  else { a.href = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + q; a.target = '_blank'; }
+}
+async function locShare(){
+  if(!locOn()) return;
+  const q = LOCV.d.lat.toFixed(6) + ',' + LOCV.d.lng.toFixed(6);
+  if(navigator.share){
+    try{ await navigator.share({title: 'My car', text: q, url: 'https://www.google.com/maps/search/?api=1&query=' + q}); return; }
+    catch(e){ if(e && e.name === 'AbortError') return; }
+  }
+  let ok = false;
+  try{ if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(q); ok = true; } }catch(e){}
+  if(!ok){ const ta = document.createElement('textarea'); ta.value = q; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta); ta.select();
+    try{ ok = document.execCommand('copy'); }catch(e){} ta.remove(); }
+  toast(ok ? 'Location copied' : q);
+}
+function locPin(c, t){ return L.divIcon({className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+  html: '<div class="locpin" style="background:' + c + '">' + t + '</div>'}); }
+function locOutings(){
+  const d = LOCV.d || {};
+  if(d.since == null) return [];
+  return ((S && S.outings) || []).filter(o => o.start_ts && o.end_ts >= d.since)
+    .sort((a, b) => b.start_ts - a.start_ts).slice(0, 15);
+}
+function locShowCar(reset){
+  if(reset) LOCV.route = null;
+  const cap = $('locCap'), back = $('locBack');
+  if(!locOn()){ if(cap) cap.textContent = LOCV.d ? 'Location is off, or no position has been recorded yet.' : 'Loading…'; return; }
+  const d = LOCV.d;
+  locLinks(d.lat, d.lng);
+  if(cap && !LOCV.route) cap.textContent = locSub();
+  if(!LOCV.map || LOCV.route) return;
+  if(back) back.hidden = true;
+  LOCV.layer.clearLayers();
+  L.marker([d.lat, d.lng], {icon: locPin('var(--blue)', '\u{1F697}')}).addTo(LOCV.layer);
+  LOCV.map.setView([d.lat, d.lng], 16, {animate: false});
+}
+async function locRoute(o){
+  let pts = [];
+  try{ pts = ((await api('api/route?from=' + o.start_ts + '&to=' + o.end_ts)).points) || []; }catch(e){}
+  if(pts.length < 2 || !LOCV.map){ toast('No route was recorded for this trip.'); return; }
+  LOCV.route = o; LOCV.layer.clearLayers();
+  const line = pts.map(p => [p[0], p[1]]);
+  const col = getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#2d8f5f';
+  L.polyline(line, {color: col, weight: 7, opacity: .22, lineJoin: 'round', lineCap: 'round'}).addTo(LOCV.layer);
+  L.polyline(line, {color: col, weight: 3.5, opacity: .95, lineJoin: 'round', lineCap: 'round'}).addTo(LOCV.layer);
+  L.marker(line[0], {icon: locPin('var(--blue)', 'A')}).addTo(LOCV.layer);
+  L.marker(line[line.length - 1], {icon: locPin(col, 'B')}).addTo(LOCV.layer);
+  LOCV.map.fitBounds(L.latLngBounds(line).pad(0.12), {animate: false});
+  $('locCap').textContent = 'Route · ' + o.day + ' · ' + o.from + (o.to !== o.from ? '–' + o.to : '') + ' · ' + o.km + ' km';
+  $('locBack').hidden = false;
+  $('pgLoc').scrollTo({top: 0, behavior: 'smooth'});
+}
+async function renderLoc(){
+  const el = $('pgLocBody'), d = LOCV.d || {}, outs = locOutings();
+  LOCV.route = null;
+  el.innerHTML = '<div class="locmap" id="locMap"></div>' +
+    '<div class="note" id="locCap" style="margin-top:var(--s3)"></div>' +
+    '<div class="locbtns"><a class="bigbtn" id="locNav" rel="noopener">Navigate</a>' +
+    '<button class="bigbtn alt" id="locShare">' + (navigator.share ? 'Share location' : 'Copy location') + '</button></div>' +
+    '<button class="bigbtn alt" id="locBack" hidden>Back to the car</button>' +
+    '<div class="lochead">Recent trips</div>' +
+    (outs.length ? '<div class="rowcard">' + outs.map((o, i) =>
+      '<button class="row" data-oi="' + i + '"><span class="ri">' + icon('car') + '</span>' +
+      '<span class="rl">' + o.day + '<small>' + o.from + (o.to !== o.from ? '–' + o.to : '') +
+      (o.avg_kmh != null ? ' · avg ' + o.avg_kmh + ' km/h' : '') + '</small></span>' +
+      '<span class="rv">' + o.km + ' km</span>' + CHEV + '</button>').join('') + '</div>'
+    : '<div class="note" style="margin-top:0">' + (d.since == null ? 'No positions recorded yet — routes appear after the next drive.'
+                                                                  : 'No trips with a recorded route yet.') + '</div>') +
+    '<div class="note">Position from CarLinko’s cloud, read by the logger while you drive. Tap a trip to see its route.</div>';
+  $('locShare').onclick = locShare;
+  $('locBack').onclick = () => locShowCar(true);
+  el.querySelectorAll('[data-oi]').forEach(b => b.onclick = () => { buzz(6); locRoute(outs[Number(b.dataset.oi)]); });
+  locShowCar(false);
+  try{ await needLeaflet(); }catch(e){ $('locMap').innerHTML = '<div class="note" style="padding:16px;margin:0">Map unavailable</div>'; return; }
+  if(!$('locMap')) return;                          // the page was re-rendered while Leaflet loaded
+  if(LOCV.map){ try{ LOCV.map.remove(); }catch(e){} }
+  LOCV.map = L.map('locMap', {zoomControl: true, attributionControl: true, scrollWheelZoom: false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'}).addTo(LOCV.map);
+  LOCV.layer = L.layerGroup().addTo(LOCV.map);
+  if(locOn()) locShowCar(false); else LOCV.map.setView([0, 110], 3, {animate: false});
+  setTimeout(() => { try{ LOCV.map.invalidateSize(); }catch(e){} }, 360);   // after the page slide-in
+}
+
 // ---- flex / share card ----
 // Same facts as v1's card (range, efficiency, lifetime km, saved, CO2, battery, WLTP beat),
 // with this month's km as the hero number.
@@ -3148,7 +3286,7 @@ async function huRun(action){
 const PAGES = {ac: ['pgAc', () => { renderAc(); renderAcSettings(); }], doors: ['pgDoors', renderDoors],
                tyres: ['pgTyres', renderTyres], energy: ['pgEnergy', renderEnergy],
                batt: ['pgBatt', renderBatt], chg: ['pgChg', renderChg],
-               dist: ['pgDist', renderDist], flex: ['pgFlex', renderFlex],
+               dist: ['pgDist', renderDist], flex: ['pgFlex', renderFlex], loc: ['pgLoc', renderLoc],
                plan: ['pgPlan', renderPlan], activity: ['pgActivity', renderActivity],
                alerts: ['pgAlerts', () => withSettings(renderAlerts)], hu: ['pgHu', renderHu],
                carrep: ['pgCarRep', renderCarRep]};
@@ -3360,6 +3498,7 @@ if(SOLO){
   const h = location.hash.slice(1);
   if(PAGES[h]) openPage(h);           // deep link: v2.html#doors / #tyres / #energy / #ac
   if(h === 'acct') document.querySelector('.tabbar button[data-v="acct"]').click();
+  locFetch(); setInterval(() => { if(!document.hidden) locFetch(); }, 30000);   // opt-in car position
   // Fallback only: while the stream is live it carries every change. Without it (old browser,
   // proxy dropped it) poll 15 s on home, 4 s on Doors and Climate.
   let lastLoad = Date.now();
