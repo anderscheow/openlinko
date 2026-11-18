@@ -470,7 +470,8 @@ def _control_data(opcode):
     Applies to every model: verified on the Jaecoo J5 (051A01R) and, byte for byte against the
     app's own frames, on a Chery Tiggo 7 CSH PHEV (050F01R, upstream #18); this fork's own Tiggo 7
     CSH answered an encrypted '741001' with '__74100100' where plain got '__7404' (2026-11-13). The
-    app 1.14.10 encrypts for all cars, so there is no plain path left to keep."""
+    app 1.14.10 encrypts for all cars. send_control() still falls back to plain if a car rejects the
+    encrypted frame, for any firmware that was never updated."""
     if not opcode.lower().startswith("74"):
         return opcode
     v = _creds().get("vehicle") or {}
@@ -486,7 +487,7 @@ def _control_data(opcode):
 
 def _frame_kind(opcode, data):
     """How `data` left the server, for the control log: `enc` (AES frame), `plain` (a 74xx sent in
-    the clear: unverified model, or the encrypt fallback) or `init` (2301/24/77, plain by design).
+    the clear: the plain fallback, or nothing to encrypt it with) or `init` (2301/24/77, plain by design).
     A refusal reads differently for each, and the reply alone does not say which one was sent."""
     if data != opcode:
         return "enc"
@@ -504,8 +505,43 @@ def send_control(opcode, timeout=20):
         return {"code": "-1", "msg": "vehicle_id / device_sn missing from creds.json"}
     try: timeout = int(timeout)
     except Exception: timeout = 20
-    data = _control_data(str(opcode))
-    frame = _frame_kind(str(opcode), data)
+    # Encrypted first; plain only as a fallback for a car whose firmware still wants it. The mode
+    # that worked is remembered per install ("control_plain"), so such a car goes plain first.
+    plain = str(opcode)
+    enc = _control_data(plain)
+    if enc == plain:                                   # init command, or nothing to encrypt with
+        tries = [("plain", plain)]
+    elif c.get("control_plain"):
+        tries = [("plain", plain), ("encrypted", enc)]
+    else:
+        tries = [("encrypted", enc), ("plain", plain)]
+    d = {}
+    for i, (mode, data) in enumerate(tries):
+        t0 = time.time()
+        d, relogin = _send_control_once(vid, dsn, data, timeout)
+        _log_control(opcode, d, _frame_kind(plain, data), t0, relogin)
+        d["mode"] = mode if i == 0 else mode + "-fallback"
+        if not _frame_rejected(plain, d):
+            if len(tries) > 1 and bool(c.get("control_plain")) != (mode == "plain"):
+                c = _creds(); c["control_plain"] = (mode == "plain")
+                try: _save_creds(c)
+                except Exception: pass
+            break
+    return d
+
+def _frame_rejected(op, d):
+    """True only when the T-Box could not read the frame: code 0000 with a bare 2-byte '74RR'
+    reply. Nothing was actuated then, so resending in the other mode cannot double a command.
+    A full verdict (done, 0x44, car moving, ...) means the frame was understood: never retried."""
+    if str(d.get("code")) != "0000" or not str(op).upper().startswith("74"):
+        return False
+    tail = str(d.get("data") or "").split("__")[-1].upper()
+    return tail.startswith("74") and len(tail) == 4
+
+def _send_control_once(vid, dsn, data, timeout):
+    """One POST of `data` to remoteControl. Returns (reply, relogin): relogin is True when the
+    token was stale and the reply is the one after a fresh login."""
+    import auth, requests
     body = {"vehicleId": vid, "deviceSn": dsn, "data": data, "timeOut": timeout}
     def _post(tok):
         ts = auth.now_ms()
@@ -517,17 +553,19 @@ def send_control(opcode, timeout=20):
         return requests.post(auth.api_base() + "/user/vehicle/remoteControl",
                              data=json.dumps(body, separators=(",", ":"), ensure_ascii=False),
                              headers=h, timeout=timeout + 8).json()
-    t0 = time.time()
     d = _post(_read_token())
     # stale token -> relogin once. 9997 = 登录失效 (login expired), the one CarLinko actually returns.
     relogin = str(d.get("code")) in ("9997", "40001", "40003", "401", "1001", "1002")
     if relogin:
         try: d = _post(auth.login())
         except Exception as e: d = {"code": "-1", "msg": f"relogin failed: {e}"}
+    return d, relogin
+
+def _log_control(opcode, d, frame, t0, relogin):
+    """One log line per POST, so a plain retry after a rejected frame shows as its own line."""
     LOG.info("control %s -> code=%s frame=%s reply=%s msg=%s in %d ms%s%s", opcode, d.get("code"),
              frame, _reply_tail(d), str(d.get("msg") or "")[:60], (time.time() - t0) * 1000,
              " (after relogin)" if relogin else "", _reply_extras(d))
-    return d
 
 def _reply_tail(d):
     """The gateway's reply payload for the log, without the device serial it is prefixed with
@@ -577,7 +615,8 @@ def control_result(op, d):
 
 def _with_verdict(res, op, d):
     """Upstream's names for the same verdict, beside this fork's `status`: `result` (the byte),
-    `reason` (the vendor app's words for a refusal) and `confirmed` (the car itself answered 00).
+    `reason` (the vendor app's words for a refusal), `confirmed` (the car itself answered 00) and
+    `mode` (how the frame went out: encrypted / plain / <mode>-fallback; absent for no send).
     Additive -- `ok`, `status` and `error` are decided by the caller and are not changed here.
     `confirmed` is written only when it is true: control_and_confirm() owns that key for a
     confirm:true call (the body-state read-back), and a client that has always treated a missing
@@ -588,6 +627,8 @@ def _with_verdict(res, op, d):
         byte = res.get("status")                           # a 78xx echo: upstream reads no verdict
     res["result"] = byte
     res["reason"] = reason
+    if d.get("mode"):
+        res["mode"] = d["mode"]
     if reached and byte == "00":
         res["confirmed"] = True
     return res
