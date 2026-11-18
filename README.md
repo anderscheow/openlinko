@@ -189,6 +189,9 @@ never sent to any server I control. See **[SECURITY.md](SECURITY.md)** for the f
   services (OpenStreetMap / OSRM) for the trip planner. Nothing else leaves your device.
 - Keep the dashboard private (LAN / Tailscale). If it must face the internet, set a
   `dashboard_password` so `/api/summary` isn't open to the world.
+- **Car location is opt-in** (`"location": true`). When on, `carlinko.db` holds a history of where the
+  car has been, and `/api/location` + `/api/route` serve it. Don't enable it on a dashboard reachable
+  from the internet without a `dashboard_password`. Positions never go into `car_report` or the logs.
 - Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, don't open a public issue.
 
 ## Setup
@@ -308,6 +311,10 @@ generates correct ones for your user and paths, so you shouldn't need to.
 | `chemistry` | | `lfp` (default) or `nmc` — picks the battery-care advice |
 | `full_charge_days` | | how often to recommend a 100% charge. Default `7` for LFP, `90` for NMC |
 | `gmaps_key` | | Google Maps key — enables trip planner + SPKLU map (else OSM fallback) |
+| `location` | | `true` turns on **Find my car** and per-trip routes (default `false`). The logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature switches itself off. **Stores where your car has been** — see Privacy below. Restart the logger after changing it |
+| `location_interval` | | seconds between fixes while driving, default `30` (min `10`) |
+| `location_parked_interval` | | seconds between fixes while parked, default `0` = none (one fix is still read when the car stops and at start-up). Min `300` when set |
+| `location_keep_days` | | days of positions to keep, default `90`; `0` = forever |
 | `dashboard_password` | | set it (login page → Advanced) to lock the dashboard behind a password — **do this if the URL is reachable from the internet** |
 
 > **Not in Indonesia? `setup.py` now asks.** It offers presets for Indonesia, South Africa, the UK

@@ -7,7 +7,7 @@ Usage:
   python logger.py            # single poll (good for Windows Task Scheduler)
   python logger.py --loop 600 # poll every 600s forever (Ctrl-C to stop)
 """
-import sys, json, time, sqlite3, argparse, os, socket, logging, traceback
+import sys, json, time, sqlite3, argparse, os, socket, logging, traceback, threading
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import websocket  # websocket-client
 import log_setup
@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS telemetry (
   tyre_raw  TEXT,                  -- 8 bytes hex (4 psi + 4 temp), FF=invalid
   online    INTEGER,               -- 1 if a fresh blob arrived
   raw       TEXT                   -- full blob hex (for back-decoding)
+);
+CREATE TABLE IF NOT EXISTS positions (   -- opt-in car location, see location_loop()
+  ts        INTEGER PRIMARY KEY,   -- unix seconds the fix was read
+  lat       REAL,
+  lng       REAL,
+  moving    INTEGER                -- 1 if the car was moving when the fix was read
 );
 """
 
@@ -398,6 +404,112 @@ def stream_loop(conn):
         fails = 0 if time.time() - started >= HEALTHY_SESSION else fails + 1
         time.sleep(min(RECONNECT_WAIT * 2 ** max(fails - 1, 0), RECONNECT_MAX))
 
+# ---- car location (opt-in, #23): CarLinko's cached position via POST /maps/deviceLocate ----
+# Off by default: a position history is sensitive. The endpoint returns the cloud's last-known fix
+# (fast, doesn't wake the car), so reading it faster than the car reports buys nothing. One fix every
+# LOC_EVERY s while the car is moving, one as it stops (so "find my car" shows where it was left),
+# one at start-up, and optionally one every LOC_PARKED s while parked (0 = off, the default). Runs as a
+# thread in this process: it reuses the logger's token.txt, so no extra login or session. Some
+# cars/regions have no position in the cloud and answer 50052 (查询定位失败, seen on a J5 in Indonesia);
+# the thread then switches itself off until the next restart instead of retrying forever.
+LOC_ON     = bool(_C.get("location"))
+LOC_EVERY  = max(10, int(_C.get("location_interval") or 30))
+LOC_PARKED = int(_C.get("location_parked_interval") or 0)
+LOC_PARKED = max(300, LOC_PARKED) if LOC_PARKED > 0 else 0
+LOC_KEEP   = int(_C["location_keep_days"]) if _C.get("location_keep_days") is not None else 90
+LOC_TICK   = 5
+LOC_UNSUPPORTED = ("50052",)
+LOC_STALE_TOKEN = ("9997", "40001", "40003", "401", "1001", "1002")
+
+def _loc_token():
+    try:
+        return open(_TOKEN_FILE).read().strip() or TOKEN
+    except Exception:
+        return TOKEN
+
+def locate():
+    """One cached-position read: (lat, lng), "unsupported" (50052), or None (transient, retry later).
+    A stale token is NOT refreshed here: the main loop owns logins (and the login guard), and the
+    next read picks up the token.txt it writes."""
+    import requests, auth
+    sn = _cfg().get("device_sn") or SN
+    if not sn:
+        return None
+    try:
+        r = requests.post(auth.api_base() + "/maps/deviceLocate",
+                          headers=auth.headers_for({}, token=_loc_token()),
+                          json={"sn": sn, "showAddress": 1}, timeout=20).json()   # showAddress must be int 1
+    except Exception as e:
+        print("location: request failed:", repr(e)[:120])
+        return None
+    code = str(r.get("code"))
+    if code == "0000":
+        d = r.get("data") or {}
+        if d.get("lat") is not None and d.get("lng") is not None:
+            return float(d["lat"]), float(d["lng"])
+        return None
+    if code in LOC_UNSUPPORTED:
+        return "unsupported"
+    if code not in LOC_STALE_TOKEN:
+        print(f"location: code {code} {r.get('msg')}")
+    return None
+
+def _loc_moving(conn):
+    """True when the newest frame (< 3 min old) shows speed > 0 or the odometer advanced in the
+    last 3 min. Unlocked-but-parked is not motion here (unlike adaptive_loop's "awake")."""
+    row = conn.execute("SELECT ts, odo_guess, raw FROM telemetry ORDER BY ts DESC LIMIT 1").fetchone()
+    if not row or time.time() - row[0] >= 180:
+        return False
+    ts, odo, raw = row
+    spd = decode(raw).get("speed") if raw else None
+    old = conn.execute("SELECT odo_guess FROM telemetry WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
+                       (ts - 180,)).fetchone()
+    moved = bool(old and old[0] is not None and odo is not None and odo > old[0])
+    return bool((spd or 0) > 0 or moved)
+
+def _loc_purge(conn):
+    if LOC_KEEP > 0:
+        conn.execute("DELETE FROM positions WHERE ts < ?", (int(time.time()) - LOC_KEEP * 86400,))
+        conn.commit()
+
+def location_loop():
+    conn = sqlite3.connect(DB, timeout=15)          # own handle: sqlite connections aren't shared across threads
+    conn.executescript(SCHEMA)
+    _loc_purge(conn)
+    print(f"location: on (every {LOC_EVERY}s while moving, "
+          f"{str(LOC_PARKED) + 's' if LOC_PARKED else 'only on stop'} while parked, "
+          f"keep {LOC_KEEP or 'forever'} days)")
+    last_fix, last_purge, was_moving = 0.0, time.time(), False
+    want_parked = True        # a parked fix is owed (start-up, or the car just stopped) until one lands
+    while True:
+        try:
+            now = time.time()
+            moving = _loc_moving(conn)
+            if moving:
+                due = now - last_fix >= LOC_EVERY
+                want_parked = True
+            else:
+                due = ((want_parked and (was_moving or now - last_fix >= 60))   # retry a failed one each minute
+                       or (LOC_PARKED and now - last_fix >= LOC_PARKED))
+            if due:
+                p = locate(); last_fix = now
+                if p == "unsupported":
+                    print("location: CarLinko has no position for this car (50052); "
+                          "location capture is off until the logger restarts")
+                    return
+                if p:
+                    conn.execute("INSERT OR REPLACE INTO positions(ts, lat, lng, moving) VALUES (?,?,?,?)",
+                                 (int(now), p[0], p[1], 1 if moving else 0))
+                    conn.commit()
+                    if not moving:
+                        want_parked = False
+            was_moving = moving
+            if now - last_purge >= 86400:
+                _loc_purge(conn); last_purge = now
+        except Exception as e:
+            print("location error:", repr(e)[:160])
+        time.sleep(LOC_TICK)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--loop", type=int, default=0, help="fixed seconds between polls; 0 = single")
@@ -411,6 +523,8 @@ def main():
         pass
     conn.executescript(SCHEMA)
     _init_glitch_guard(conn)
+    if LOC_ON and (args.stream or args.adaptive or args.loop > 0):
+        threading.Thread(target=location_loop, name="location", daemon=True).start()
     if args.stream:
         stream_loop(conn)
     elif args.adaptive:

@@ -2912,6 +2912,43 @@ def control_verdict(op, data):
     return False, res, reason or f"Car refused (code 0x{res})"
 
 
+# ---- car location (opt-in, #23): read-only views of the positions the logger stores ----
+# The server never calls /maps/deviceLocate itself: the logger is the single writer (one session,
+# one poller), every dashboard just reads. Off unless "location": true in creds.json; never in demo.
+ROUTE_PAD = 300           # s either side of an outing: picks up the fix read as it stopped
+ROUTE_MAX_SPAN = 3 * 86400
+
+def _location_on():
+    return bool(_creds().get("location")) and not DEMO
+
+def _positions(sql, args):
+    if not os.path.exists(DB):
+        return []
+    conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
+    try:
+        return conn.execute(sql, args).fetchall()
+    except sqlite3.OperationalError:          # no positions table yet (logger not restarted with location on)
+        return []
+    finally:
+        conn.close()
+
+def location_latest():
+    out = {"enabled": _location_on(), "lat": None, "lng": None, "ts": None, "age_s": None, "moving": None}
+    if out["enabled"]:
+        r = _positions("SELECT ts, lat, lng, moving FROM positions ORDER BY ts DESC LIMIT 1", ())
+        if r:
+            ts, lat, lng, mv = r[0]
+            out.update(ts=ts, lat=lat, lng=lng, moving=bool(mv), age_s=int(time.time()) - ts)
+    return out
+
+def location_route(t0, t1):
+    if not _location_on() or t1 < t0 or t1 - t0 > ROUTE_MAX_SPAN:
+        return {"points": []}
+    rows = _positions("SELECT lat, lng, ts FROM positions WHERE ts BETWEEN ? AND ? ORDER BY ts",
+                      (t0 - ROUTE_PAD, t1 + ROUTE_PAD))
+    return {"points": [[lat, lng, ts] for lat, lng, ts in rows]}
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # _send records the outcome; avoid BaseHTTPRequestHandler's duplicate line.
@@ -3183,6 +3220,21 @@ class H(BaseHTTPRequestHandler):
                 self._send(200, car_report().encode(), "text/plain; charset=utf-8")
             except Exception as e:
                 self._send(500, ("car report failed: %r" % (e,)).encode()[:300], "text/plain")
+            return
+        if path == "/api/location":                    # newest stored car position (opt-in)
+            if not self._authed():
+                self._send(401, b'{"error":"auth"}', "application/json"); return
+            self._send(200, json.dumps(location_latest()).encode(), "application/json")
+            return
+        if path == "/api/route":                       # stored positions for ?from=&to= (an outing's ts range)
+            if not self._authed():
+                self._send(401, b'{"error":"auth"}', "application/json"); return
+            q = urllib.parse.parse_qs(self.path.partition("?")[2])
+            try:
+                t0 = int((q.get("from") or ["0"])[0]); t1 = int((q.get("to") or ["0"])[0])
+            except ValueError:
+                self._send(400, b'{"error":"from/to must be unix seconds"}', "application/json"); return
+            self._send(200, json.dumps(location_route(t0, t1)).encode(), "application/json")
             return
         if path == "/api/controls":                    # what this car supports + opcodes to test
             if not self._authed():
