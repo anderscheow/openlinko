@@ -568,6 +568,14 @@ a cost was priced on: `charging.session_kwh_billed`, `charging.week_kwh_billed` 
 `totals.chg_kwh_billed` beside `chg_kwh` / `kwh`. Nothing existing changed, so `api_version` is not
 bumped; a client reading an older dashboard finds these absent and has only the pack's kWh.
 
+**`charging.session.cost_exact` (additive, 2026-11-18).** `cost` is rounded to whole currency
+units, which is exact for rupiah and up to half a unit out for a currency with cents (a RM8.72
+charge reads `9`). `cost_exact` is the same cost to two decimals. A client that quotes a cost
+beside a currency with decimals should read `cost_exact` and, where it is absent (an older
+dashboard), treat `cost` as an estimate. `charging.session.price_source` (`override`, `period` or
+`default`) says what priced it; `default` is creds.json's flat tariff, which a car outside the
+dashboard's home currency may never have had configured. `api_version` is not bumped.
+
 ### Fuel range — RESOLVED ✅ (bytes 70–71)
 
 Three captures settle what one couldn't. The pair is **the car's headline range**: a BEV writes its

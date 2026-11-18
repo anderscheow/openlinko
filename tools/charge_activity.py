@@ -6,6 +6,8 @@ stays current while the app is closed. Keep the two in step: the content shape i
 ChargeActivityContent.toJson, and the relay validates it key for key.
 """
 
+import math
+
 import push_evaluator
 
 FINISH_MOVE = 2 * 60    # a finish that moved less than this is the same finish
@@ -14,6 +16,13 @@ REFRESH = 10 * 60       # the "Updated" stamp and the stale time are refreshed a
 # Remote only: at most one routine update every two minutes. A start or an end goes at once.
 # The app polls every 5 s and needs no such floor; a push has a budget.
 UPDATE_GAP = 2 * 60
+# How far the session's last reading may sit from the battery and still be the charge that just
+# ended (chargeOutcomeSocSlack): the session is the dashboard's latest, and a charge it has not
+# recorded yet must not be shown with the previous one's numbers.
+OUTCOME_SOC_SLACK = 1
+# Currencies quoted in whole units (CurrencyInfo.wholeUnitCodes): no cents to lose to rounding.
+WHOLE_UNIT_CODES = frozenset(("IDR", "JPY", "KRW", "VND", "CLP", "ISK"))
+OUTCOME_KEYS = ("start_soc", "duration_min", "energy_kwh", "cost", "cost_approx", "currency")
 
 
 def content(snapshot, ts, target_pct, phase="charging"):
@@ -28,7 +37,8 @@ def content(snapshot, ts, target_pct, phase="charging"):
     rate = snapshot.get("charge_rate_kw")
     if type(rate) not in (int, float) or not 0 <= rate <= 1000:
         rate = None
-    return {
+    ended = None if live else outcome(snapshot)
+    return {**(ended or {}),
         "phase": phase,
         "soc": snapshot["battery"],
         "updated_at": int(ts),
@@ -39,6 +49,54 @@ def content(snapshot, ts, target_pct, phase="charging"):
                       if live and settled and remaining and remaining > 0 else None),
         "estimating": bool(live and elapsed is not None and not settled),
     }
+
+
+def _number(value, ceiling):
+    """value as a float when it is a finite number in [0, ceiling], else None."""
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= ceiling:
+        return None
+    return float(value)
+
+
+def cost_trusted(price_source):
+    """Whether a session's cost may go on a Lock Screen (chargeCostTrusted). `default` is
+    creds.json's flat tariff -- 2540 in whatever currency the dashboard reports unless someone
+    changed it -- so it is hidden; an absent source (an older dashboard) is unknown, not wrong.
+    The dashboard's own docstring calls the charging tariff one owners did configure, so this
+    also hides the cost of an owner with a creds.json tariff and no price book: the one line to
+    flip if that is the commoner case."""
+    return price_source != "default"
+
+
+def outcome(snapshot):
+    """What the charge that just ended came to, in the content's own keys, or None when there is
+    nothing trustworthy to say (chargeOutcome in lib/core/utils/charge_activity.dart): no
+    session, one still open, or one that is not this charge. Keys are all present or none are,
+    so a relay that predates them still accepts the content when there is no outcome."""
+    session, battery = snapshot.get("charge_session"), snapshot.get("battery")
+    if not isinstance(session, dict) or session.get("ongoing") is True:
+        return None
+    soc1, soc0 = session.get("soc1"), session.get("soc0")
+    if type(soc1) is not int or type(battery) is not int or \
+            abs(soc1 - battery) > OUTCOME_SOC_SLACK:
+        return None
+    energy = _number(session.get("kwh_billed" if snapshot.get("charge_metered") else "kwh"), 2000)
+    duration = session.get("dur_min")
+    duration = duration if type(duration) is int and 0 < duration <= 24 * 60 else None
+    code = snapshot.get("currency")
+    code = code.upper() if isinstance(code, str) and len(code) == 3 and code.isalpha() else None
+    cost, approx = None, False
+    if code and cost_trusted(session.get("price_source")):
+        exact = _number(session.get("cost_exact"), 1e9)
+        cost = exact if exact is not None else _number(session.get("cost"), 1e9)
+        approx = cost is not None and exact is None and code not in WHOLE_UNIT_CODES
+    if duration is None and not energy and cost is None:
+        return None
+    return {"start_soc": soc0 if type(soc0) is int and 0 <= soc0 <= 100 else None,
+            "duration_min": duration,
+            "energy_kwh": energy if energy else None,
+            "cost": cost, "cost_approx": approx,
+            "currency": code if cost is not None else None}
 
 
 def ended_phase(snapshot, target_pct):

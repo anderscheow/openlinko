@@ -50,8 +50,20 @@ def healthy(db, now=None):
         return False
 
 
+CHARGE_SESSION_KEYS = ("ongoing", "dur_min", "kwh", "kwh_billed", "cost", "cost_exact",
+                       "price_source", "soc0", "soc1")
+
+
+def _charge_session(session):
+    """The few fields of charging.session the Live Activity's outcome reads, or None."""
+    if not isinstance(session, dict):
+        return None
+    return {key: session.get(key) for key in CHARGE_SESSION_KEYS}
+
+
 def alert_snapshot(summary):
-    """Only the fields Dart's alert evaluator reads from /api/summary."""
+    """Only the fields Dart's alert evaluator reads from /api/summary, plus what the charging
+    Live Activity needs to say how a finished charge went."""
     charging = summary.get("charging") or {}
     vehicle = summary.get("vehicle") or {}
     model = str(vehicle.get("model") or "").lower()
@@ -65,6 +77,10 @@ def alert_snapshot(summary):
         "charge_rate_kw": charging.get("rate_kw"),
         "charge_mode": charging.get("mode"),
         "charge_state": charging.get("state"),
+        "charge_session": _charge_session(charging.get("session")),
+        "charge_metered": isinstance(charging.get("session"), dict) and
+                          charging["session"].get("kwh_billed") is not None,
+        "currency": (summary.get("currency") or {}).get("code"),
         "battery": summary.get("battery"),
         "moving": summary.get("moving") is True,
         "unlocked": summary.get("unlocked") is True,
@@ -393,6 +409,17 @@ class Dispatcher:
                                  (installation_id,))
                     conn.execute("DELETE FROM push_activity_outbox WHERE installation_id=?",
                                  (installation_id,))
+                elif code == 400 and any(k in activity["content"]
+                                         for k in charge_activity.OUTCOME_KEYS):
+                    # A relay that predates what a finished charge came to refuses the whole
+                    # content for the keys it does not know. Say the charge ended the way it
+                    # always has rather than not at all: strip those keys and send it again at
+                    # once. Without them a second 400 is a real refusal, so this cannot loop.
+                    legacy = {k: v for k, v in activity["content"].items()
+                              if k not in charge_activity.OUTCOME_KEYS}
+                    conn.execute("""UPDATE push_activity_outbox SET content_json=?,
+                        state='pending',next_attempt=? WHERE installation_id=? AND event_id=?""",
+                        (json.dumps(legacy), now, *key))
                 elif code in (400, 404, 410):
                     conn.execute("""UPDATE push_activity_outbox SET state='rejected'
                         WHERE installation_id=? AND event_id=?""", key)

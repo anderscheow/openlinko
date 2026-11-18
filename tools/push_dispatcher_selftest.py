@@ -373,6 +373,53 @@ class ChargeActivityPlanTest(unittest.TestCase):
         step, content, _ = activity.plan(memory, snapshot(battery=61), 2000, None)
         self.assertEqual((step, content["phase"]), ("end", "stopped"))
 
+    def ended(self, session=None, **changes):
+        """The frame a charge ends on, carrying the dashboard's session for that charge."""
+        return snapshot(**{
+            "battery": 100, "charge_state": 2, "charge_metered": True, "currency": "MYR",
+            "charge_session": {"ongoing": False, "dur_min": 112, "kwh": 38.0, "kwh_billed": 41.2,
+                               "cost": 9, "cost_exact": 8.72, "price_source": "period",
+                               "soc0": 18, "soc1": 100, **(session or {})},
+            **changes})
+
+    def end_content(self, frame):
+        _, _, memory = activity.plan({}, self.charging(), 1000, 80)
+        return activity.plan(memory, frame, 2000, 80)[1]
+
+    def test_the_end_says_how_long_and_what_it_cost(self):
+        content = self.end_content(self.ended())
+        self.assertEqual({key: content[key] for key in activity.OUTCOME_KEYS},
+                         {"start_soc": 18, "duration_min": 112, "energy_kwh": 41.2,
+                          "cost": 8.72, "cost_approx": False, "currency": "MYR"})
+
+    def test_a_cost_known_only_to_the_unit_is_an_estimate_where_there_are_cents(self):
+        rounded = self.end_content(self.ended({"cost_exact": None}))
+        self.assertEqual((rounded["cost"], rounded["cost_approx"]), (9.0, True))
+        rupiah = self.end_content(self.ended({"cost_exact": None, "cost": 115800}, currency="IDR"))
+        self.assertEqual((rupiah["cost"], rupiah["cost_approx"]), (115800.0, False))
+
+    def test_a_flat_default_tariff_is_not_quoted_but_the_rest_is(self):
+        content = self.end_content(self.ended({"price_source": "default"}))
+        self.assertEqual((content["cost"], content["currency"], content["duration_min"]),
+                         (None, None, 112))
+        # An older dashboard names no source: unknown, not wrong, so it shows what it showed.
+        self.assertEqual(self.end_content(self.ended({"price_source": None}))["cost"], 8.72)
+
+    def test_the_meters_kwh_only_where_the_dashboard_meters(self):
+        self.assertEqual(self.end_content(self.ended(charge_metered=False))["energy_kwh"], 38.0)
+
+    def test_a_session_that_is_not_this_charge_adds_nothing(self):
+        for frame in (self.ended({"ongoing": True}), self.ended({"soc1": 90}),
+                      self.ended(charge_session=None)):
+            content = self.end_content(frame)
+            self.assertFalse(set(activity.OUTCOME_KEYS) & set(content), frame["charge_session"])
+
+    def test_a_charge_in_progress_never_carries_an_outcome(self):
+        mid = self.charging(charge_session=self.ended()["charge_session"], currency="MYR")
+        step, content, _ = activity.plan({}, mid, 1000, 80)
+        self.assertEqual(step, "start")
+        self.assertFalse(set(activity.OUTCOME_KEYS) & set(content))
+
     def test_nothing_happens_without_a_charge(self):
         self.assertEqual(activity.plan({}, snapshot(), 1000, 80), (None, None, {}))
 
@@ -541,6 +588,48 @@ class DispatcherTest(unittest.TestCase):
         end = self.activities()[-1]
         self.assertEqual((end["event"], end["content"]["phase"]), ("end", "complete"))
         self.assertEqual(len(self.activities()), 3)
+
+    def test_a_relay_that_predates_the_outcome_still_ends_the_activity(self):
+        registrations.put(self.push, binding("installation_1234567890",
+                                             charge_activity=True,
+                                             time_zone="Asia/Kuala_Lumpur"))
+        self.row(self.now - 20, "aaa", battery=22)
+        self.worker.run_once()
+        self.latest["charging"] = {"active": True, "elapsed_min": 6, "remaining_min": 141,
+                                   "rate_kw": 6.1, "mode": "ac", "state": 1}
+        self.row(self.now - 10, "bbb", battery=22)
+        self.worker.run_once()
+        self.now += 60
+        self.latest["currency"] = {"code": "MYR"}
+        self.latest["charging"] = {"active": False, "state": 2, "session": {
+            "ongoing": False, "dur_min": 112, "kwh": 38.0, "kwh_billed": 41.2, "cost": 9,
+            "cost_exact": 8.72, "price_source": "period", "soc0": 18, "soc1": 80}}
+        # The relay knows nothing of the new keys: it refuses the first end, then takes the
+        # same end without them.
+        self.relay.statuses = [400]
+        self.row(self.now - 10, "ddd", battery=80)
+        self.worker.run_once()
+        ends = [a for a in self.activities() if a["event"] == "end"]
+        self.assertEqual(len(ends), 2)
+        self.assertEqual(ends[0]["content"]["cost"], 8.72)
+        self.assertNotIn("cost", ends[1]["content"])
+        self.assertEqual((ends[1]["event_id"], ends[1]["content"]["phase"], ends[1]["content"]["soc"]),
+                         (ends[0]["event_id"], "complete", 80))
+
+    def test_a_refusal_of_content_without_the_new_keys_is_still_final(self):
+        registrations.put(self.push, binding("installation_1234567890",
+                                             charge_activity=True,
+                                             time_zone="Asia/Kuala_Lumpur"))
+        self.row(self.now - 20, "aaa", battery=22)
+        self.worker.run_once()
+        self.latest["charging"] = {"active": True, "elapsed_min": 1, "remaining_min": 351,
+                                   "rate_kw": 2.8, "mode": "ac", "state": 1}
+        self.relay.statuses = [400]
+        self.row(self.now - 10, "bbb", battery=22)
+        self.worker.run_once()
+        # Sent once and refused: with no new keys to strip there is nothing to retry.
+        self.assertEqual(len(self.activities()), 1)
+        self.assertEqual(self.activities()[0]["event"], "start")
 
     def test_no_activity_without_the_setting(self):
         registrations.put(self.push, binding("installation_1234567890"))
@@ -727,6 +816,12 @@ class TelemetryWindowTest(unittest.TestCase):
         ts += 60
         driving = self.check(ts, frame(battery + 11, odo + 1, unlocked=True))
         self.assertTrue(driving["moving"])
+        # The charge the car just left is the latest session, priced and closed, and the window
+        # carries the currency: what the charging Live Activity ends on.
+        self.assertIs(driving["charge_session"]["ongoing"], False)
+        self.assertEqual(driving["charge_session"]["price_source"], "default")
+        self.assertIsNotNone(driving["charge_session"]["cost_exact"])
+        self.assertEqual(driving["currency"], "IDR")
         self.assertGreater(len(self.checked), 40)
 
     def test_a_charge_the_car_flagged_ends_when_the_car_says_so(self):

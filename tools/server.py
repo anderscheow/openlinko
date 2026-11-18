@@ -1355,7 +1355,10 @@ def session_detail(s):
             "soc0": s["soc0"], "soc1": s["soc1"], "avg_kw": round(s["avg"], 1),
             "peak_kw": round(s["peak"], 1) if s["peak"] else None,
             "kwh_billed": round(s["billed"], 1),        # metered (what you pay for)
-            "cost": round(s["cost"]), **session_price(s), "series": series}
+            "cost": round(s["cost"]),
+            "cost_exact": round(s["cost"], 2),          # `cost` is whole units: exact for IDR, up to
+                                                        # half a unit out for a currency with cents
+            **session_price(s), "series": series}
 
 def session_price(s):
     """How a priced session was priced, for every list that shows one: its ID (the start the
@@ -1945,8 +1948,10 @@ def alert_summary(data, now, tyre_frame=None):
     fr = [(t, d.get("battery"), d.get("odometer")) for t, _, d in data
           if d.get("battery") is not None and d.get("odometer") is not None]
     # The charge rate as summary() reports it: the SoC session's, then the car's own when it
-    # flags a charge -- the charging Live Activity shows it.
-    live = _live_soc_session(data, build_sessions(fr, now))
+    # flags a charge -- the charging Live Activity shows it. The sessions are priced as summary()
+    # prices them, so the activity's closing figures are the ones the app's Energy tab shows.
+    sess = priced_sessions(data, fr, now, _book())
+    live = _live_soc_session(data, sess)
     rate = None
     if live:
         lr = live_rate(live["pts"])
@@ -1967,7 +1972,13 @@ def alert_summary(data, now, tyre_frame=None):
                         "state": dec.get("charge_state")},
            "tyre_unit": TYRE_UNIT, "tyre_status": "Normal", "tyre_indirect": True,
            "tpms": [{"pos": p, "psi": None, "temp": None, "valid": False} for p in TPMS_POS],
-           "volt12_status": None}
+           "volt12_status": None,
+           "currency": {"symbol": CUR_SYMBOL, "locale": CUR_LOCALE, "code": CUR_CODE}}
+    # What the charge that just ended came to: summary()'s own `charging.session`, which the
+    # charging Live Activity closes on (charge_activity.outcome).
+    detail = live or (sess[-1] if sess else None)
+    if detail:
+        out["charging"]["session"] = {**session_detail(detail), "ongoing": detail is live}
     out.update(_tyre_fields(_last_tyre_frame(data) or tyre_frame, ts, now))
     out.update(_volt12_watch(data, now))
     return out
