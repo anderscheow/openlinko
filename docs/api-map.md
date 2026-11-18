@@ -191,6 +191,7 @@ account settings remain unavailable, and so is the price book (its routes answer
 | `push_alerts` | `GET /api/push/status`, `PUT /api/push/installations/{installation_id}`, and `DELETE /api/push/installations/{installation_id}` manage Voltmoss remote-alert bindings. Advertised only when the dashboard is configured, password-gated, and explicitly configured for a HTTPS relay and HTTPS public access. This is separate from CarLinko's `vehicle_alerts`. |
 | `push_charge_started` | The push binding accepts and the dispatcher evaluates the `charge_started` rule. Advertised exactly when `push_alerts` is: the kind arrived after the binding contract shipped, and a dashboard without it answers 400 to a binding that names it, so a phone names it only when this is listed. |
 | `push_charge_activity` | The push binding accepts the optional `charge_activity` field and the dispatcher keeps the phone's charging Live Activity current through the relay. Advertised exactly when `push_alerts` is; a dashboard without it answers 400 to a binding that names the field. |
+| `push_charge_reminders` | The push binding accepts the optional `charge_reminders` field, the dispatcher reminds the phone to unplug after a charge, and `POST /api/chargereminders` answers the notification's buttons. Advertised exactly when `push_alerts` is; a dashboard without it answers 400 to a binding that names the field. |
 | `climate_settings` | `POST /api/actemp` sets a supported A/C temperature and `POST /api/airduration` sets 5, 10 or 15 minutes; current duration reads back through `/api/controls`. |
 | `climate_seats` | `POST /api/seat` applies a supported seat heat/vent level after checking the car's capabilities. |
 | `maintenance_guide` | `GET /api/maintenance-guide` returns the country and model timetable, completed milestones, and next due service. |
@@ -352,6 +353,28 @@ service reminder counts days to the due date on the phone's calendar, so the
 dispatcher evaluates it in that zone rather than the dashboard's; a Railway
 container runs on UTC and would otherwise move the reminder by a day near
 midnight. All six fields are required.
+
+`charge_reminders` is an eighth, optional field, sent only when `/api/status` lists
+`push_charge_reminders`, and omitted -- never `null` -- when the phone wants none:
+`{"offsets_min": [0, 10, 20], "before_eta_min": null}`. `offsets_min` is a strictly increasing list of
+at most three from 0, 5, 10, 20, 30 and 60; `before_eta_min` is 5, 10, 15 or `null`; they are never both
+empty. The car reports a charge ending the same way whether or not the cable comes out, so a reminder
+cannot know it is still plugged in: it is a schedule measured from the moment a charge ended
+*complete* (a charge that stopped short is a breaker or an owner who unplugged, and never a reminder).
+The dispatcher queues one `charge_unplug` event per offset in the same outbox as the alerts, due at
+`end + offset` minutes, with `value` the offset. It skips offset 0 when the `charge_complete` alert
+goes out on that same frame, so the two do not buzz together. Every pending reminder of a phone is
+cancelled by a frame with `moving` true or a new charge; **unlocking is not a cancel**, since owners open
+the door with the cable still in. `before_eta_min` sends one `charge_ending_soon` per charge (`value`
+the minutes left) once the car's estimate has settled. Plus only, as every alert. Registering again
+keeps the pending reminders when the schedule is unchanged, because the app registers whenever it
+opens -- which is when an owner at a charger looks at it -- and drops them when it changed or was
+removed. `POST /api/chargereminders` takes `{"action": "unplugged"}` (drop every pending reminder of
+every phone on this dashboard, the cable being the car's) or `{"action": "snooze", "minutes": 10}` (drop
+them and queue one more per phone whose charge ended in the last three hours, at most six reminders per
+charge) and answers `{"ok": true, "cancelled": N, "queued": M}`; it needs the session cookie like
+`/api/forcerefresh`. `tools/charge_reminders.py` holds the rules; the app's `ChargeReminders` shares its
+offsets.
 
 `charge_activity` is a seventh, optional field, sent only when `/api/status`
 lists `push_charge_activity`: `true`, and nothing else is accepted. While it is

@@ -21,6 +21,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import charge_activity
+import charge_reminders as reminders
 import push_evaluator
 import push_registrations as registrations
 
@@ -301,37 +302,87 @@ class Dispatcher:
                 return
             if snapshot:
                 installations = conn.execute("""SELECT installation_id,rules_json,
-                    service_json,plus,memory_json,time_zone,activity_json,activity_memory_json
-                    FROM push_installations""").fetchall()
+                    service_json,plus,memory_json,time_zone,activity_json,activity_memory_json,
+                    reminders_json,reminders_memory_json FROM push_installations""").fetchall()
                 for (installation_id, rules_json, service_json, plus, memory_json,
-                     time_zone, activity_json, activity_memory_json) in installations:
+                     time_zone, activity_json, activity_memory_json,
+                     reminders_json, reminders_memory_json) in installations:
                     rules = json.loads(rules_json)["rules"]
                     if activity_json:
                         self._plan_activity(conn, installation_id, rules,
                                             json.loads(activity_memory_json or "{}"), snapshot,
                                             ts, digest, now, time_zone)
-                    if not rules:
-                        continue
-                    memory = json.loads(memory_json) if memory_json else {}
-                    events, next_memory = push_evaluator.evaluate(
-                        rules, memory, snapshot, json.loads(service_json),
-                        today=_local_date(ts, time_zone), ts=ts)
-                    conn.execute("""UPDATE push_installations SET memory_json=?
-                        WHERE installation_id=?""", (json.dumps(next_memory), installation_id))
-                    if not plus or not memory_json:
-                        continue  # track the condition, but baseline silently
-                    for event in events:
-                        event_id = "e_" + hashlib.sha256(
-                            (installation_id + ":" + str(ts) + ":" + digest + ":" +
-                             event["kind"]).encode()).hexdigest()[:40]
-                        conn.execute("""INSERT OR IGNORE INTO push_outbox
-                            (event_id,installation_id,kind,value,occurred_at,expires_at,next_attempt)
-                            VALUES (?,?,?,?,?,?,?)""", (
-                            event_id, installation_id, event["kind"],
-                            _wire_value(event["kind"], event["value"], ts, time_zone),
-                            ts, ts + EVENT_TTL, now))
+                    events = self._queue_alerts(conn, installation_id, rules, service_json, plus,
+                                                memory_json, snapshot, ts, digest, now, time_zone)
+                    self._plan_reminders(conn, installation_id, rules, plus, reminders_json,
+                                         reminders_memory_json, snapshot, ts, digest, now, events)
             conn.execute("""UPDATE push_dispatcher_state SET cursor_ts=?,cursor_digest=?
                 WHERE singleton=1""", (ts, digest))
+
+    def _queue_alerts(self, conn, installation_id, rules, service_json, plus, memory_json,
+                      snapshot, ts, digest, now, time_zone):
+        """Evaluate one phone's alert rules on a frame and queue what they raise. Returns the events
+        queued, which is none for a phone with no rules, one that is not Plus, and the first frame it
+        was seen on -- those track the condition and baseline silently."""
+        if not rules:
+            return []
+        memory = json.loads(memory_json) if memory_json else {}
+        events, next_memory = push_evaluator.evaluate(
+            rules, memory, snapshot, json.loads(service_json),
+            today=_local_date(ts, time_zone), ts=ts)
+        conn.execute("""UPDATE push_installations SET memory_json=?
+            WHERE installation_id=?""", (json.dumps(next_memory), installation_id))
+        if not plus or not memory_json:
+            return []
+        for event in events:
+            event_id = "e_" + hashlib.sha256(
+                (installation_id + ":" + str(ts) + ":" + digest + ":" +
+                 event["kind"]).encode()).hexdigest()[:40]
+            conn.execute("""INSERT OR IGNORE INTO push_outbox
+                (event_id,installation_id,kind,value,occurred_at,expires_at,next_attempt)
+                VALUES (?,?,?,?,?,?,?)""", (
+                event_id, installation_id, event["kind"],
+                _wire_value(event["kind"], event["value"], ts, time_zone),
+                ts, ts + EVENT_TTL, now))
+        return events
+
+    def _plan_reminders(self, conn, installation_id, rules, plus, reminders_json, memory_json,
+                        snapshot, ts, digest, now, events):
+        """Queue, cancel and announce one phone's unplug reminders for a frame.
+
+        Reminders are future-dated rows in the same outbox the alerts use -- `next_attempt` is when a
+        row becomes due -- so a restart loses nothing and the dashboard needs no timer of its own.
+        Plus only, like every alert. Tracked in a memory of its own, not the alert rules', so a phone
+        that has switched every alert off still gets them."""
+        config = json.loads(reminders_json) if reminders_json else None
+        if not config or not plus:
+            if memory_json:
+                conn.execute("""UPDATE push_installations SET reminders_memory_json=NULL
+                    WHERE installation_id=?""", (installation_id,))
+            return
+        complete = charge_activity.ended_phase(
+            snapshot, charge_activity.target_pct(rules)) == "complete"
+        actions, memory = reminders.plan(
+            config, json.loads(memory_json) if memory_json else {}, snapshot, ts,
+            complete=complete,
+            charge_complete_sent=any(e["kind"] == "charge_complete" for e in events))
+        conn.execute("""UPDATE push_installations SET reminders_memory_json=?
+            WHERE installation_id=?""", (json.dumps(memory), installation_id))
+        if actions["cancel"]:
+            conn.execute("""UPDATE push_outbox SET state='cancelled' WHERE installation_id=?
+                AND kind='charge_unplug' AND state IN ('pending','sending')""", (installation_id,))
+        for offset, due in actions["schedule"]:
+            conn.execute("""INSERT OR IGNORE INTO push_outbox
+                (event_id,installation_id,kind,value,occurred_at,expires_at,next_attempt)
+                VALUES (?,?,?,?,?,?,?)""", (
+                registrations._reminder_id(installation_id, ts, "unplug", offset),
+                installation_id, "charge_unplug", offset, due, due + reminders.TTL, due))
+        if actions["eta"] is not None:
+            conn.execute("""INSERT OR IGNORE INTO push_outbox
+                (event_id,installation_id,kind,value,occurred_at,expires_at,next_attempt)
+                VALUES (?,?,?,?,?,?,?)""", (
+                registrations._reminder_id(installation_id, ts, digest, "ending_soon"),
+                installation_id, "charge_ending_soon", actions["eta"], ts, ts + EVENT_TTL, now))
 
     def _plan_activity(self, conn, installation_id, rules, memory, snapshot, ts, digest, now,
                        time_zone):

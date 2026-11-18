@@ -631,6 +631,190 @@ class DispatcherTest(unittest.TestCase):
         self.assertEqual(len(self.activities()), 1)
         self.assertEqual(self.activities()[0]["event"], "start")
 
+    # --- unplug reminders -------------------------------------------------------------------
+
+    REMINDERS = {"offsets_min": [0, 10, 20], "before_eta_min": None}
+
+    def remind(self, installation="installation_1234567890", reminders=None, **extra):
+        registrations.put(self.push, binding(installation, charge_reminders=reminders or self.REMINDERS,
+                                             **extra))
+
+    def charge_then_finish(self, battery_end=100, state=2, frames=0):
+        """A baseline frame, a charge, then the frame it ends on. Returns the end frame's time."""
+        self.latest["charging"] = {"active": False}
+        self.row(self.now - 90, "r0", battery=70)
+        self.worker.run_once()
+        self.now += 30
+        self.latest["charging"] = {"active": True, "elapsed_min": 20, "remaining_min": 30,
+                                   "rate_kw": 7.0, "mode": "ac", "state": 1}
+        self.row(self.now - 5, "r1", battery=80)
+        self.worker.run_once()
+        self.now += 30
+        self.latest["charging"] = {"active": False, "state": state}
+        self.row(self.now - 5, "r2", battery=battery_end)
+        self.worker.run_once()
+        return self.now - 5
+
+    def unplug_rows(self):
+        with closing(registrations._connect(self.push)) as conn:
+            return conn.execute("""SELECT value,state,next_attempt,occurred_at FROM push_outbox
+                WHERE kind='charge_unplug' ORDER BY value,event_id""").fetchall()
+
+    def sent_kinds(self):
+        return [(s[2]["kind"], s[2]["value"]) for s in self.relay.sent if "kind" in s[2]]
+
+    def test_a_finished_charge_schedules_reminders_that_a_drive_cancels(self):
+        self.remind()
+        ended = self.charge_then_finish()
+        # "When it finishes" is due now and goes; the others wait for their time.
+        self.assertEqual(self.sent_kinds(), [("charge_unplug", 0)])
+        waiting = [r for r in self.unplug_rows() if r[1] == "pending"]
+        self.assertEqual([(r[0], r[2], r[3]) for r in waiting],
+                         [(10, ended + 600, ended + 600), (20, ended + 1200, ended + 1200)])
+        self.now += 600
+        self.worker.run_once()
+        self.assertEqual(self.sent_kinds(), [("charge_unplug", 0), ("charge_unplug", 10)])
+        # The car moves: the owner has come back, so the last one never goes.
+        self.latest["moving"] = True
+        self.row(self.now - 5, "r3", battery=100)
+        self.worker.run_once()
+        self.now += 700
+        self.worker.run_once()
+        self.assertEqual(len(self.sent_kinds()), 2)
+        self.assertEqual([r[1] for r in self.unplug_rows()], ["sent", "sent", "cancelled"])
+
+    def test_unlocking_the_car_does_not_cancel_a_reminder(self):
+        self.remind()
+        self.charge_then_finish()
+        self.latest["unlocked"] = True            # a door opened to fetch a bag, cable still in
+        self.row(self.now - 5, "r3", battery=100)
+        self.worker.run_once()
+        self.assertEqual([r[1] for r in self.unplug_rows()], ["sent", "pending", "pending"])
+
+    def test_a_new_charge_cancels_the_rest(self):
+        self.remind()
+        self.charge_then_finish()
+        self.latest["charging"] = {"active": True, "elapsed_min": 1, "remaining_min": 200,
+                                   "rate_kw": 7.0, "mode": "ac", "state": 1}
+        self.row(self.now - 5, "r3", battery=95)
+        self.worker.run_once()
+        self.assertEqual([r[1] for r in self.unplug_rows()], ["sent", "cancelled", "cancelled"])
+
+    def test_the_first_reminder_is_skipped_when_charge_complete_just_told_them(self):
+        # A 100% target is crossed on the very frame the charge ends, so the alert and "when it
+        # finishes" would buzz together: the alert goes and the reminder waits for its next time.
+        self.remind(rules={"v": 1, "rules": {"charge_complete": {"on": True, "t": 100}}})
+        self.charge_then_finish()
+        self.assertEqual([k for k, _ in self.sent_kinds()], ["charge_complete"])
+        self.assertEqual([r[0] for r in self.unplug_rows()], [10, 20])
+
+    def test_the_first_reminder_goes_when_charge_complete_fired_earlier_in_the_charge(self):
+        # An 80% target is crossed mid-charge, long before the end, so nothing doubles at the end.
+        self.remind(rules={"v": 1, "rules": {"charge_complete": {"on": True, "t": 80}}})
+        self.charge_then_finish()
+        self.assertEqual([k for k, _ in self.sent_kinds()], ["charge_complete", "charge_unplug"])
+        self.assertEqual([r[0] for r in self.unplug_rows()], [0, 10, 20])
+
+    def test_a_charge_that_stopped_short_is_never_a_reminder(self):
+        self.remind()
+        self.charge_then_finish(battery_end=58, state=5)     # a breaker, a cable, an owner
+        self.assertEqual(self.unplug_rows(), [])
+        self.assertEqual(self.sent_kinds(), [])
+
+    def test_a_phone_without_plus_or_without_a_schedule_gets_none(self):
+        self.remind("installation_1234567890", plus=False)
+        registrations.put(self.push, binding("installation_0987654321"))
+        self.charge_then_finish()
+        self.assertEqual(self.unplug_rows(), [])
+
+    def test_a_phone_with_every_alert_off_still_gets_its_reminders(self):
+        self.remind(rules={"v": 1, "rules": {}})
+        self.charge_then_finish()
+        self.assertEqual([r[0] for r in self.unplug_rows()], [0, 10, 20])
+
+    def test_before_it_finishes_is_said_once_after_the_estimate_settles(self):
+        self.remind(reminders={"offsets_min": [], "before_eta_min": 10})
+        self.latest["charging"] = {"active": True, "elapsed_min": 2, "remaining_min": 8,
+                                   "rate_kw": 7.0, "mode": "ac", "state": 1}
+        self.row(self.now - 5, "e0", battery=80)           # unsettled: the car's pre-ramp guess
+        self.worker.run_once()
+        self.assertEqual(self.sent_kinds(), [])
+        for n, remaining in enumerate((9, 8, 7)):
+            self.now += 30
+            self.latest["charging"] = {"active": True, "elapsed_min": 12 + n, "remaining_min": remaining,
+                                       "rate_kw": 7.0, "mode": "ac", "state": 1}
+            self.row(self.now - 5, f"e{n + 1}", battery=85)
+            self.worker.run_once()
+        self.assertEqual(self.sent_kinds(), [("charge_ending_soon", 9)])
+
+    def test_registering_again_keeps_an_unchanged_schedule_and_drops_a_changed_one(self):
+        self.remind()
+        self.charge_then_finish()
+        with closing(registrations._connect(self.push)) as conn, conn:
+            conn.execute("""INSERT INTO push_outbox(event_id,installation_id,kind,value,occurred_at,
+                expires_at,next_attempt) VALUES ('stale_alert_000000000000','installation_1234567890',
+                'soc_below',19,1,2,3)""")
+        # The app opens at the charger and registers again with the same schedule.
+        self.remind()
+        self.assertEqual([r[1] for r in self.unplug_rows()], ["sent", "pending", "pending"])
+        with closing(registrations._connect(self.push)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM push_outbox WHERE kind='soc_below'")
+                             .fetchone()[0], 0)
+        # A different schedule drops what the old one queued; none at all drops it and the memory.
+        self.remind(reminders={"offsets_min": [30], "before_eta_min": None})
+        self.assertEqual([r[1] for r in self.unplug_rows()], ["sent"])
+        registrations.put(self.push, binding("installation_1234567890"))
+        with closing(registrations._connect(self.push)) as conn:
+            self.assertIsNone(conn.execute("""SELECT reminders_json,reminders_memory_json
+                FROM push_installations""").fetchone()[1])
+
+    def test_unplugged_drops_every_phones_reminders_and_snooze_asks_again_within_a_cap(self):
+        self.remind("installation_1234567890")
+        self.remind("installation_0987654321")
+        ended = self.charge_then_finish()
+        self.assertEqual(len([r for r in self.unplug_rows() if r[1] == "pending"]), 4)
+        dropped, queued = registrations.snooze_reminders(self.push, now=self.now)
+        self.assertEqual((dropped, queued), (4, 2))
+        later = [r for r in self.unplug_rows() if r[1] == "pending"]
+        self.assertEqual([(r[0], r[2]) for r in later],
+                         [((self.now + 600 - ended) // 60, self.now + 600)] * 2)
+        # One charge sends at most six: three scheduled, then one more per snooze, and the snooze that
+        # would be the seventh drops what is pending and queues nothing.
+        for _ in range(2):
+            self.assertEqual(registrations.snooze_reminders(self.push, now=self.now), (2, 2))
+        self.assertEqual(registrations.snooze_reminders(self.push, now=self.now), (2, 0))
+        self.assertEqual(registrations.cancel_reminders(self.push), 0)
+        # After "unplugged" there is nothing for a late snooze to attach to.
+        self.remind("installation_1234567890")      # unchanged, so nothing is dropped
+        self.assertEqual(registrations.snooze_reminders(self.push, now=self.now), (0, 0))
+
+    def test_a_snooze_a_day_later_has_nothing_to_remind_about(self):
+        self.remind()
+        self.charge_then_finish()
+        self.assertEqual(registrations.snooze_reminders(self.push, now=self.now + 4 * 3600)[1], 0)
+
+    def test_the_binding_names_reminders_only_in_the_shape_the_dashboard_checks(self):
+        ok = binding("installation_1234567890", charge_reminders=self.REMINDERS)
+        self.assertEqual(ok["charge_reminders"], self.REMINDERS)
+        # An older app sends no such field: the binding is as it always was.
+        self.assertIsNone(binding("installation_1234567890")["charge_reminders"])
+        for bad in ({"offsets_min": [0, 10, 20, 30], "before_eta_min": None},
+                    {"offsets_min": [10, 5], "before_eta_min": None},
+                    {"offsets_min": [10, 10], "before_eta_min": None},
+                    {"offsets_min": [7], "before_eta_min": None},
+                    {"offsets_min": [10.0], "before_eta_min": None},
+                    {"offsets_min": [True], "before_eta_min": None},
+                    {"offsets_min": [], "before_eta_min": None},
+                    {"offsets_min": [10], "before_eta_min": 7},
+                    {"offsets_min": [10]}, None, [], {"offsets_min": [10], "before_eta_min": None,
+                                                      "extra": 1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                binding("installation_1234567890", charge_reminders=bad)
+        # The two kinds of lead are independent and either may stand alone.
+        for config in ({"offsets_min": [], "before_eta_min": 5},
+                       {"offsets_min": [0, 5, 10], "before_eta_min": 15}):
+            binding("installation_1234567890", charge_reminders=config)
+
     def test_no_activity_without_the_setting(self):
         registrations.put(self.push, binding("installation_1234567890"))
         registrations.put(self.push, binding("installation_0987654321",

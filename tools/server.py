@@ -68,9 +68,12 @@ def push_enabled():
     return push_dispatcher.healthy(PUSH_DB)
 
 # Push alert kinds added after push_alerts shipped, each advertised alongside it, and
-# push_charge_activity: the dispatcher drives the phone's charging Live Activity. A phone names
-# one in its binding only when this dashboard lists it, because an older one refuses the binding.
-PUSH_CAPABILITIES = ("push_alerts", "push_charge_started", "push_charge_activity")
+# push_charge_activity: the dispatcher drives the phone's charging Live Activity, and
+# push_charge_reminders: it reminds the phone to unplug after a charge, and answers
+# POST /api/chargereminders. A phone names one in its binding only when this dashboard lists it,
+# because an older one refuses the binding.
+PUSH_CAPABILITIES = ("push_alerts", "push_charge_started", "push_charge_activity",
+                     "push_charge_reminders")
 
 def status_capabilities():
     return (["maintenance_guide", "service_centres", "maintenance_records"] if DEMO else
@@ -3565,6 +3568,38 @@ class H(BaseHTTPRequestHandler):
                     err = str(e)[:200]
             self._send(200, json.dumps({"ok": err is None, "error": err,
                                         "login_guard": None if DEMO else auth.login_status()}).encode(),
+                       "application/json")
+            return
+        if path == "/api/chargereminders":             # the owner's answer to an unplug reminder, from
+            if not self._authed():                     # its notification button: "unplugged" drops what is
+                self._send(401, b'{"ok":false,"error":"auth"}', "application/json"); return
+            if not push_configured():                  # pending, "snooze" asks again after a while. It acts
+                self._send(404, b'{"ok":false,"error":"push unavailable"}',   # for every phone on this
+                           "application/json"); return                       # dashboard: the cable is the car's.
+            try:
+                import charge_reminders
+                import push_registrations as push
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n <= 256:
+                    raise ValueError("invalid body size")
+                body = json.loads(self.rfile.read(n).decode())
+                action = body.get("action") if isinstance(body, dict) else None
+                if action == "unplugged":
+                    dropped, queued = push.cancel_reminders(PUSH_DB), 0
+                elif action == "snooze":
+                    minutes = body.get("minutes", charge_reminders.SNOOZE_MIN)
+                    if type(minutes) is not int or not 1 <= minutes <= 60:
+                        raise ValueError("invalid minutes")
+                    dropped, queued = push.snooze_reminders(PUSH_DB, minutes=minutes)
+                else:
+                    raise ValueError("invalid action")
+            except (ValueError, TypeError, json.JSONDecodeError) as e:
+                self._send(400, json.dumps({"ok": False, "error": str(e)[:120]}).encode(),
+                           "application/json"); return
+            except Exception as e:
+                _log_exception("%s %s failed" % (self.command, path), e)
+                self._send(500, b'{"ok":false,"error":"failed"}', "application/json"); return
+            self._send(200, json.dumps({"ok": True, "cancelled": dropped, "queued": queued}).encode(),
                        "application/json")
             return
         if path == "/api/forcerefresh":                # poke the car with the benign init (0x77) so it

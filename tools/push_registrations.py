@@ -4,6 +4,7 @@ The dashboard never receives an FCM installation ID. It stores only the relay's
 opaque installation ID and a sender secret for that one destination.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -12,6 +13,8 @@ import time
 from contextlib import closing
 from datetime import date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import charge_reminders
 
 
 # charge_started arrived after the binding contract shipped, so a phone only names it once
@@ -39,10 +42,13 @@ def validate(installation_id, body):
         raise ValueError("invalid installation ID")
     # charge_activity is optional and named only once /api/status lists push_charge_activity:
     # true asks the dispatcher to keep the phone's charging Live Activity current.
-    if not isinstance(body, dict) or set(body) - {"charge_activity"} != FIELDS:
+    # charge_reminders is optional and named only once it lists push_charge_reminders: when to remind
+    # the phone to unplug after a charge. Omitted, not null, when the phone wants none.
+    if not isinstance(body, dict) or set(body) - {"charge_activity", "charge_reminders"} != FIELDS:
         raise ValueError("invalid binding fields")
     if body.get("charge_activity", True) is not True:
         raise ValueError("invalid charge activity")
+    reminders = charge_reminders.validate(body["charge_reminders"]) if "charge_reminders" in body else None
     time_zone = body["time_zone"]
     if (not isinstance(time_zone, str) or len(time_zone) > 64 or
             not re.fullmatch(r"[A-Za-z0-9_+\-/]+", time_zone)):
@@ -90,7 +96,8 @@ def validate(installation_id, body):
             date.fromisoformat(last_date)
         except ValueError as e:
             raise ValueError("invalid service date") from e
-    return {"installation_id": installation_id, "charge_activity": False, **body}
+    return {"installation_id": installation_id, "charge_activity": False, **body,
+            "charge_reminders": reminders}
 
 
 def _restrict(path, create=False):
@@ -138,6 +145,11 @@ def _connect(db):
     for column in ("activity_json", "activity_memory_json"):
         if column not in columns:
             conn.execute(f"ALTER TABLE push_installations ADD COLUMN {column} TEXT")
+    # Unplug reminders: the phone's schedule (NULL = none) and what the last frame left of it
+    # (whether it was charging, when the charge ended, how many reminders it has queued).
+    for column in ("reminders_json", "reminders_memory_json"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE push_installations ADD COLUMN {column} TEXT")
     conn.execute("""CREATE TABLE IF NOT EXISTS push_dispatcher_state (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
         cursor_ts INTEGER NOT NULL DEFAULT 0,
@@ -178,11 +190,15 @@ def _connect(db):
 
 
 def put(db, binding):
+    reminders = binding.get("charge_reminders")
+    reminders_json = json.dumps(reminders, sort_keys=True) if reminders else None
     with closing(_connect(db)) as conn, conn:
+        before = conn.execute("""SELECT reminders_json,sender_secret FROM push_installations
+            WHERE installation_id=?""", (binding["installation_id"],)).fetchone()
         conn.execute("""INSERT INTO push_installations
             (installation_id, sender_secret, rules_json, locale, time_zone, service_json, plus,
-             activity_json, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             activity_json, reminders_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(installation_id) DO UPDATE SET
               sender_secret=excluded.sender_secret,
               rules_json=excluded.rules_json,
@@ -191,22 +207,86 @@ def put(db, binding):
               service_json=excluded.service_json,
               plus=excluded.plus,
               activity_json=excluded.activity_json,
+              reminders_json=excluded.reminders_json,
               memory_json=CASE WHEN sender_secret<>excluded.sender_secret
                 THEN NULL ELSE memory_json END,
               activity_memory_json=CASE WHEN sender_secret<>excluded.sender_secret
                 OR excluded.activity_json IS NULL THEN NULL ELSE activity_memory_json END,
+              reminders_memory_json=CASE WHEN sender_secret<>excluded.sender_secret
+                OR excluded.reminders_json IS NULL THEN NULL ELSE reminders_memory_json END,
               updated_at=excluded.updated_at""", (
             binding["installation_id"], binding["sender_secret"],
             json.dumps(binding["rules"], sort_keys=True), binding["locale"], binding["time_zone"],
             json.dumps(binding["service"], sort_keys=True), int(binding["plus"]),
-            "true" if binding["charge_activity"] else None, int(time.time()),
+            "true" if binding["charge_activity"] else None, reminders_json, int(time.time()),
         ))
-        # A queued event from an older rule set or car must not outlive a PUT.
+        # A queued event from an older rule set or car must not outlive a PUT -- except the unplug
+        # reminders of a schedule that has not changed. The app registers again whenever it opens,
+        # which is exactly when an owner standing at a charger looks at it, and that must not quietly
+        # delete the reminders it exists to send. A schedule that changed, was switched off, or now
+        # belongs to a different sender is dropped like the rest.
+        unchanged = (before is not None and before[0] == reminders_json and
+                     before[1] == binding["sender_secret"])
         conn.execute("""DELETE FROM push_outbox WHERE installation_id=?
-            AND state IN ('pending','sending')""", (binding["installation_id"],))
+            AND state IN ('pending','sending') AND (kind<>'charge_unplug' OR ?)""",
+                     (binding["installation_id"], int(not unchanged)))
         if not binding["charge_activity"]:
             conn.execute("DELETE FROM push_activity_outbox WHERE installation_id=?",
                          (binding["installation_id"],))
+
+
+def _reminder_id(installation_id, *parts):
+    text = ":".join([installation_id, *map(str, parts)])
+    return "e_" + hashlib.sha256(text.encode()).hexdigest()[:40]
+
+
+def cancel_reminders(db):
+    """The owner said the car is unplugged: drop every pending unplug reminder of every phone on this
+    dashboard -- the cable is the car's, not one phone's -- and forget when the charge ended, so a
+    late snooze has nothing to attach to. Returns how many were dropped."""
+    with closing(_connect(db)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        dropped = conn.execute("""UPDATE push_outbox SET state='cancelled'
+            WHERE kind='charge_unplug' AND state IN ('pending','sending')""").rowcount
+        for installation_id, memory_json in conn.execute("""SELECT installation_id,
+                reminders_memory_json FROM push_installations
+                WHERE reminders_memory_json IS NOT NULL""").fetchall():
+            memory = json.loads(memory_json)
+            memory["ended_at"], memory["queued"] = None, 0
+            conn.execute("UPDATE push_installations SET reminders_memory_json=? WHERE installation_id=?",
+                         (json.dumps(memory), installation_id))
+        return dropped
+
+
+def snooze_reminders(db, now=None, minutes=charge_reminders.SNOOZE_MIN):
+    """The owner asked to be reminded again: drop what is pending and queue one more reminder,
+    `minutes` from now, for each phone with reminders on whose charge ended in the last few hours and
+    that has not used up what one charge may send. Returns (dropped, queued)."""
+    now = int(time.time() if now is None else now)
+    queued = 0
+    with closing(_connect(db)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        dropped = conn.execute("""UPDATE push_outbox SET state='cancelled'
+            WHERE kind='charge_unplug' AND state IN ('pending','sending')""").rowcount
+        rows = conn.execute("""SELECT installation_id,reminders_memory_json FROM push_installations
+            WHERE reminders_json IS NOT NULL AND reminders_memory_json IS NOT NULL
+            AND plus=1""").fetchall()
+        for installation_id, memory_json in rows:
+            memory = json.loads(memory_json)
+            if not charge_reminders.snoozable(memory, now):
+                continue
+            due = now + minutes * 60
+            conn.execute("""INSERT OR IGNORE INTO push_outbox
+                (event_id,installation_id,kind,value,occurred_at,expires_at,next_attempt)
+                VALUES (?,?,?,?,?,?,?)""", (
+                _reminder_id(installation_id, memory["ended_at"], "snooze", memory["queued"]),
+                installation_id, "charge_unplug", (due - memory["ended_at"]) // 60, due,
+                due + charge_reminders.TTL, due))
+            memory["queued"] += 1
+            conn.execute("UPDATE push_installations SET reminders_memory_json=? WHERE installation_id=?",
+                         (json.dumps(memory), installation_id))
+            queued += 1
+    return dropped, queued
 
 
 def delete(db, installation_id):
