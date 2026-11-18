@@ -555,7 +555,7 @@
     <div class="head2"><div class="over">Find my car</div><span class="over" id="fcAge"></span></div>
     <div id="fcMap" class="tpmap"></div>
     <div class="fclinks">
-      <a id="fcG" target="_blank" rel="noopener">Google Maps</a><a id="fcW" target="_blank" rel="noopener">Waze</a>
+      <a id="fcNav" rel="noopener">Navigate</a><button id="fcShare" type="button">Copy location</button>
       <button id="fcBack" type="button" style="display:none"></button>
     </div>
     <div class="cap" id="fcCap" style="text-align:left;margin-top:8px"></div>
@@ -876,7 +876,7 @@ const THEME_COLOR={light:'#f4f1ea',dark:'#15140f'};
 function applyTheme(){ document.documentElement.dataset.theme=theme;
   const m=$('themeColor'); if(m) m.setAttribute('content',THEME_COLOR[theme]||THEME_COLOR.light); }
 const MAP_ID={
-  "Find my car":"Cari mobil","Back to the car":"Kembali ke mobil","last seen":"terakhir terlihat","moving":"bergerak","parked":"parkir","No route was recorded for this trip.":"Tidak ada rute tercatat untuk perjalanan ini.","Route":"Rute","Tap a trip to see its route.":"Ketuk perjalanan untuk melihat rutenya.",
+  "Find my car":"Cari mobil","Navigate":"Navigasi","Share location":"Bagikan lokasi","Copy location":"Salin lokasi","Copied":"Tersalin","My car":"Mobil saya","Back to the car":"Kembali ke mobil","last seen":"terakhir terlihat","moving":"bergerak","parked":"parkir","No route was recorded for this trip.":"Tidak ada rute tercatat untuk perjalanan ini.","Route":"Rute","Tap a trip to see its route.":"Ketuk perjalanan untuk melihat rutenya.",
   "Range":"Jangkauan","State":"Kondisi","Tyres":"Ban",
   "Driven today":"Jarak hari ini","Week":"Minggu","Month":"Bulan",
   "Efficiency":"Efisiensi","Used today":"Terpakai hari ini","Energy left":"Energi tersisa",
@@ -1183,6 +1183,39 @@ function fcShowCar(){
   setTimeout(()=>{ try{_fcMap.invalidateSize();}catch(e){} },140);
   $('fcCap').textContent = T('Tap a trip to see its route.');
 }
+// Navigate: hand the destination to the OS rather than naming apps. Android shows its chooser with every
+// installed navigation app (geo: intent) or opens the user's default; iOS has no chooser for web links, so
+// its system maps link; desktop browsers have no navigation apps, so web directions.
+function fcPlatform(){ const ua=navigator.userAgent||'';
+  if(/Android/i.test(ua)) return 'android';
+  if(/iPhone|iPad|iPod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)) return 'ios';
+  return 'desktop'; }
+function fcLinks(lat,lng){
+  const ll=lat.toFixed(6)+','+lng.toFixed(6), pf=fcPlatform(), a=$('fcNav'); if(!a) return;
+  if(pf==='android'){ a.href='geo:'+ll+'?q='+ll+'('+encodeURIComponent(T('My car'))+')'; a.removeAttribute('target'); }
+  else if(pf==='ios'){ a.href='https://maps.apple.com/?daddr='+ll+'&dirflg=d'; a.target='_blank'; }
+  else { a.href='https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+ll; a.target='_blank'; }
+  a.textContent=T('Navigate');
+  const b=$('fcShare'); if(b&&!b.dataset.busy) b.textContent=T(navigator.share?'Share location':'Copy location');
+}
+// Share sheet where the browser has one (HTTPS / localhost on phones), else copy "lat,lng" so it can be
+// pasted into any app. Clipboard needs a secure context too, so plain-http LAN dashboards fall back to
+// execCommand, and if even that fails the coordinates are shown on the button to copy by hand.
+async function fcShare(){
+  if(!_fcPos) return;
+  const ll=_fcPos.lat.toFixed(6)+','+_fcPos.lng.toFixed(6), b=$('fcShare');
+  if(navigator.share){
+    try{ await navigator.share({title:T('My car'), text:ll, url:'https://www.google.com/maps/search/?api=1&query='+ll}); return; }
+    catch(e){ if(e&&e.name==='AbortError') return; }          // user closed the sheet: nothing to do
+  }
+  let ok=false;
+  try{ if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(ll); ok=true; } }catch(e){}
+  if(!ok){ const ta=document.createElement('textarea'); ta.value=ll; ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:0;left:0;opacity:0'; document.body.append(ta); ta.select();
+    try{ ok=document.execCommand('copy'); }catch(e){} ta.remove(); }
+  b.dataset.busy='1'; b.textContent= ok? T('Copied')+' \u2713' : ll;
+  setTimeout(()=>{ delete b.dataset.busy; b.textContent=T(navigator.share?'Share location':'Copy location'); }, ok?2000:8000);
+}
 async function loadLocation(){
   if(!_fcOn&&Date.now()<_fcNext) return;          // off: re-check once a minute, not on every 5 s read
   let d; try{ const r=await fetch('api/location',{cache:'no-store'}); if(!r.ok) return; d=await r.json(); }catch(e){ return; }
@@ -1192,9 +1225,7 @@ async function loadLocation(){
   if(!_fcOn||typeof d.lat!=='number'||typeof d.lng!=='number'){ sec.style.display='none'; return; }
   const was=sec.style.display==='none'; sec.style.display='';
   $('fcAge').textContent = T('last seen')+' '+(d.age_s!=null?ago(d.age_s/60)+' '+T('ago'):'')+' · '+T(d.moving?'moving':'parked');
-  const ll=d.lat.toFixed(6)+','+d.lng.toFixed(6);
-  $('fcG').href='https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+ll;
-  $('fcW').href='https://waze.com/ul?ll='+ll+'&navigate=yes';
+  fcLinks(d.lat,d.lng);
   const moved=!_fcPos||_fcPos.lat!==d.lat||_fcPos.lng!==d.lng;
   _fcPos={lat:d.lat,lng:d.lng};
   if(!_fcRoute&&(was||moved)) fcShowCar();     // don't yank the map while a route is open
@@ -1216,6 +1247,7 @@ async function fcShowRoute(t){
   sec.scrollIntoView({behavior:'smooth',block:'center'});
 }
 { const fb=$('fcBack'); if(fb) fb.addEventListener('click',()=>fcShowCar()); }
+{ const fs=$('fcShare'); if(fs) fs.addEventListener('click',()=>fcShare()); }
 function gmapsLink(fromO, toO, stops){
   // no origin -> Google navigates from "My Location" (avoids the fixed-pin vs current-GPS reroute fight)
   let u='https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(toO);
