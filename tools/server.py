@@ -467,18 +467,14 @@ def _control_data(opcode):
     ~Nov 2026) rejects a plain 74xxyy frame with a bare '__7404'. Init commands (2301/24/77) stay
     plain. The scheme (reversed from app 1.14.10) lives in carlinko_crypto; it embeds VIN + userId.
 
-    GATED to the models whose owner has live-verified it, because a wrong frame is worse than a clean
-    reject: the Jaecoo J5 EV (upstream) and this Tiggo 7 CSH (2026-11-13 -- 741001 encrypted came
-    back '__74100100' and the A/C switched, while plain '741001' got '__7404'). Widen the predicate
-    once another model is tested; do not drop the gate blind."""
+    Applies to every model: verified on the Jaecoo J5 (051A01R) and, byte for byte against the
+    app's own frames, on a Chery Tiggo 7 CSH PHEV (050F01R, upstream #18); this fork's own Tiggo 7
+    CSH answered an encrypted '741001' with '__74100100' where plain got '__7404' (2026-11-13). The
+    app 1.14.10 encrypts for all cars, so there is no plain path left to keep."""
     if not opcode.lower().startswith("74"):
         return opcode
     v = _creds().get("vehicle") or {}
     vin = (v.get("vin") or "")
-    model = (v.get("model") or "").lower()
-    verified = ("j5" in model) or ("tiggo 7 csh" in model) or vin.upper().startswith("MF7HD27B")
-    if not verified:
-        return opcode   # unverified model -> old plain path, do not risk a wrong frame
     try:
         import carlinko_crypto
         uid = _user_id()
@@ -2854,6 +2850,9 @@ def control_verdict(op, data):
     res = tail[6:8]
     if res == "00":
         return True, res, None
+    if res == "44":   # app: sub_permission_error. The T-Box keeps its own allow-list of userIds (#18)
+        return False, res, ("No operation permission: this CarLinko account isn't authorised "
+                            "on the car's T-Box")
     reason = AC_REFUSALS.get(res) if op[2:4] == "10" else None
     return False, res, reason or f"Car refused (code 0x{res})"
 
