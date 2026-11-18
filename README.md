@@ -192,6 +192,9 @@ never sent to any server I control. See **[SECURITY.md](SECURITY.md)** for the f
 - **Car location is opt-in** (`"location": true`). When on, `carlinko.db` holds a history of where the
   car has been, and `/api/location` + `/api/route` serve it. Don't enable it on a dashboard reachable
   from the internet without a `dashboard_password`. Positions never go into `car_report` or the logs.
+  Turning it off stops new fixes and hides the card; stored fixes still age out after
+  `location_keep_days`. To erase them now, stop the logger and, next to `carlinko.db`, run
+  `python -c "import sqlite3; c=sqlite3.connect('carlinko.db'); c.execute('DROP TABLE IF EXISTS positions'); c.commit()"`.
 - Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, don't open a public issue.
 
 ## Setup

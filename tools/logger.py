@@ -7,7 +7,7 @@ Usage:
   python logger.py            # single poll (good for Windows Task Scheduler)
   python logger.py --loop 600 # poll every 600s forever (Ctrl-C to stop)
 """
-import sys, json, time, sqlite3, argparse, os, socket, logging, traceback, threading
+import sys, json, time, sqlite3, argparse, os, socket, logging, traceback, threading, math
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import websocket  # websocket-client
 import log_setup
@@ -57,12 +57,6 @@ CREATE TABLE IF NOT EXISTS telemetry (
   tyre_raw  TEXT,                  -- 8 bytes hex (4 psi + 4 temp), FF=invalid
   online    INTEGER,               -- 1 if a fresh blob arrived
   raw       TEXT                   -- full blob hex (for back-decoding)
-);
-CREATE TABLE IF NOT EXISTS positions (   -- opt-in car location, see location_loop()
-  ts        INTEGER PRIMARY KEY,   -- unix seconds the fix was read
-  lat       REAL,
-  lng       REAL,
-  moving    INTEGER                -- 1 if the car was moving when the fix was read
 );
 """
 
@@ -409,17 +403,46 @@ def stream_loop(conn):
 # (fast, doesn't wake the car), so reading it faster than the car reports buys nothing. One fix every
 # LOC_EVERY s while the car is moving, one as it stops (so "find my car" shows where it was left),
 # one at start-up, and optionally one every LOC_PARKED s while parked (0 = off, the default). Runs as a
-# thread in this process: it reuses the logger's token.txt, so no extra login or session. Some
-# cars/regions have no position in the cloud and answer 50052 (查询定位失败, seen on a J5 in Indonesia);
-# the thread then switches itself off until the next restart instead of retrying forever.
-LOC_ON     = bool(_C.get("location"))
-LOC_EVERY  = max(10, int(_C.get("location_interval") or 30))
-LOC_PARKED = int(_C.get("location_parked_interval") or 0)
-LOC_PARKED = max(300, LOC_PARKED) if LOC_PARKED > 0 else 0
-LOC_KEEP   = int(_C["location_keep_days"]) if _C.get("location_keep_days") is not None else 90
+# thread in this process: it reuses the logger's token.txt, never logs in itself, and goes quiet while
+# the login guard holds. Some cars/regions have no position in the cloud and answer 50052
+# (查询定位失败, seen on a J5 in Indonesia); the thread then switches itself off until the next restart.
+# Settings are read at start-up: restart the logger after changing them.
+def _loc_flag(v):
+    if isinstance(v, bool): return v
+    if isinstance(v, (int, float)): return v != 0
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+def _loc_int(key, default, lo, hi):
+    """A creds.json number, tolerant of typos: a bad value falls back to the default instead of
+    raising here at import, which would take telemetry down with it."""
+    v = _C.get(key)
+    if v is None or v == "":
+        return default
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError, OverflowError):
+        print(f"location: ignoring {key}={v!r} (not a number), using {default}")
+        return default
+    return min(max(n, lo), hi)
+
+LOC_ON     = _loc_flag(_C.get("location"))
+LOC_EVERY  = _loc_int("location_interval", 30, 10, 86400)
+LOC_PARKED = _loc_int("location_parked_interval", 0, 0, 7 * 86400)
+LOC_PARKED = max(300, LOC_PARKED) if LOC_PARKED else 0
+LOC_KEEP   = _loc_int("location_keep_days", 90, -1, 36500)         # 0 = keep forever
+LOC_KEEP   = 90 if LOC_KEEP < 0 else LOC_KEEP     # a negative typo must not mean "forever"
 LOC_TICK   = 5
+LOC_RETRY  = 60           # a failed start-up/stop fix is retried this often until one lands
 LOC_UNSUPPORTED = ("50052",)
 LOC_STALE_TOKEN = ("9997", "40001", "40003", "401", "1001", "1002")
+LOC_SCHEMA = """
+CREATE TABLE IF NOT EXISTS positions (   -- only created when location is on
+  ts        INTEGER PRIMARY KEY,   -- unix seconds the fix was read
+  lat       REAL,
+  lng       REAL,
+  moving    INTEGER                -- 1 if the car was moving when the fix was read
+);
+"""
 
 def _loc_token():
     try:
@@ -427,31 +450,46 @@ def _loc_token():
     except Exception:
         return TOKEN
 
+def _loc_fix(d):
+    """(lat, lng) from the reply's data, or None for anything that isn't a plausible fix."""
+    if not isinstance(d, dict):
+        return None
+    try:
+        lat, lng = float(d.get("lat")), float(d.get("lng"))
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(lat) and math.isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    if abs(lat) < 1e-6 and abs(lng) < 1e-6:          # 0,0 = a "no fix" placeholder
+        return None
+    return lat, lng
+
 def locate():
-    """One cached-position read: (lat, lng), "unsupported" (50052), or None (transient, retry later).
-    A stale token is NOT refreshed here: the main loop owns logins (and the login guard), and the
-    next read picks up the token.txt it writes."""
+    """One cached-position read: (lat, lng), "unsupported" (50052), or None (no fix / transient; the
+    caller tries again later). No network at all while the login guard holds, or before setup has
+    produced a token and a device serial. A stale token is left for the main loop to refresh."""
     import requests, auth
-    sn = _cfg().get("device_sn") or SN
-    if not sn:
+    if auth.login_status() is not None:
+        return None
+    sn, tok = _cfg().get("device_sn") or SN, _loc_token()
+    if not sn or not tok:
         return None
     try:
         r = requests.post(auth.api_base() + "/maps/deviceLocate",
-                          headers=auth.headers_for({}, token=_loc_token()),
+                          headers=auth.headers_for({}, token=tok),
                           json={"sn": sn, "showAddress": 1}, timeout=20).json()   # showAddress must be int 1
-    except Exception as e:
+    except Exception as e:                            # network error, timeout, non-JSON reply
         print("location: request failed:", repr(e)[:120])
+        return None
+    if not isinstance(r, dict):
         return None
     code = str(r.get("code"))
     if code == "0000":
-        d = r.get("data") or {}
-        if d.get("lat") is not None and d.get("lng") is not None:
-            return float(d["lat"]), float(d["lng"])
-        return None
+        return _loc_fix(r.get("data"))
     if code in LOC_UNSUPPORTED:
         return "unsupported"
     if code not in LOC_STALE_TOKEN:
-        print(f"location: code {code} {r.get('msg')}")
+        print(f"location: code {code} {str(r.get('msg'))[:80]}")
     return None
 
 def _loc_moving(conn):
@@ -461,41 +499,61 @@ def _loc_moving(conn):
     if not row or time.time() - row[0] >= 180:
         return False
     ts, odo, raw = row
-    spd = decode(raw).get("speed") if raw else None
+    try:
+        spd = decode(raw).get("speed") if raw else None
+    except (ValueError, TypeError):                   # a malformed blob counts as "no speed reading"
+        spd = None
     old = conn.execute("SELECT odo_guess FROM telemetry WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
                        (ts - 180,)).fetchone()
     moved = bool(old and old[0] is not None and odo is not None and odo > old[0])
     return bool((spd or 0) > 0 or moved)
 
 def _loc_purge(conn):
-    if LOC_KEEP > 0:
+    """Retention. Also run at start-up with location OFF, so an old history still ages out."""
+    if LOC_KEEP > 0 and conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='positions'").fetchone():
         conn.execute("DELETE FROM positions WHERE ts < ?", (int(time.time()) - LOC_KEEP * 86400,))
         conn.commit()
 
 def location_loop():
-    conn = sqlite3.connect(DB, timeout=15)          # own handle: sqlite connections aren't shared across threads
-    conn.executescript(SCHEMA)
-    _loc_purge(conn)
+    conn = None
+    while conn is None:                               # e.g. a locked DB at boot: retry, don't die
+        c = None
+        try:
+            c = sqlite3.connect(DB, timeout=15)       # own handle: sqlite connections aren't shared across threads
+            c.executescript(LOC_SCHEMA)
+            _loc_purge(c)
+            conn = c
+        except sqlite3.Error as e:
+            print("location: database not ready:", repr(e)[:120])
+            if c is not None: c.close()
+            time.sleep(30)
     print(f"location: on (every {LOC_EVERY}s while moving, "
           f"{str(LOC_PARKED) + 's' if LOC_PARKED else 'only on stop'} while parked, "
           f"keep {LOC_KEEP or 'forever'} days)")
+    if not _cfg().get("dash_pw_hash"):
+        print("location: WARNING no dashboard_password is set -- anyone who can open this dashboard "
+              "can see where the car is. Keep it on LAN/Tailscale or set one.")
     last_fix, last_purge, was_moving = 0.0, time.time(), False
     want_parked = True        # a parked fix is owed (start-up, or the car just stopped) until one lands
+    last_err, last_err_t = None, 0.0
     while True:
+        now = time.time()
         try:
-            now = time.time()
             moving = _loc_moving(conn)
             if moving:
                 due = now - last_fix >= LOC_EVERY
                 want_parked = True
             else:
-                due = ((want_parked and (was_moving or now - last_fix >= 60))   # retry a failed one each minute
+                due = ((want_parked and (was_moving or now - last_fix >= LOC_RETRY))
                        or (LOC_PARKED and now - last_fix >= LOC_PARKED))
             if due:
-                p = locate(); last_fix = now
+                last_fix = now                        # first, so a failure can't turn into a 5 s retry loop
+                p = locate()
                 if p == "unsupported":
                     print("location: CarLinko has no position for this car (50052); "
                           "location capture is off until the logger restarts")
+                    conn.close()
                     return
                 if p:
                     conn.execute("INSERT OR REPLACE INTO positions(ts, lat, lng, moving) VALUES (?,?,?,?)",
@@ -507,7 +565,9 @@ def location_loop():
             if now - last_purge >= 86400:
                 _loc_purge(conn); last_purge = now
         except Exception as e:
-            print("location error:", repr(e)[:160])
+            msg = repr(e)[:160]
+            if msg != last_err or now - last_err_t >= 600:     # don't print the same error every 5 s
+                print("location error:", msg); last_err, last_err_t = msg, now
         time.sleep(LOC_TICK)
 
 def main():
@@ -525,6 +585,9 @@ def main():
     _init_glitch_guard(conn)
     if LOC_ON and (args.stream or args.adaptive or args.loop > 0):
         threading.Thread(target=location_loop, name="location", daemon=True).start()
+    elif not LOC_ON:
+        try: _loc_purge(conn)                 # location off: an old history still ages out
+        except sqlite3.Error: pass
     if args.stream:
         stream_loop(conn)
     elif args.adaptive:

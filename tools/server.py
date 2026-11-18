@@ -2917,9 +2917,16 @@ def control_verdict(op, data):
 # one poller), every dashboard just reads. Off unless "location": true in creds.json; never in demo.
 ROUTE_PAD = 300           # s either side of an outing: picks up the fix read as it stopped
 ROUTE_MAX_SPAN = 3 * 86400
+ROUTE_MAX_POINTS = 20000  # 3 days of non-stop driving at the 10 s minimum interval is ~26k; plenty
+TS_MAX = 2 ** 40          # sanity bound for ?from/?to (SQLite INTEGER would overflow on silly input)
+
+def _truthy(v):
+    if isinstance(v, bool): return v
+    if isinstance(v, (int, float)): return v != 0
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")     # so "false" is off
 
 def _location_on():
-    return bool(_creds().get("location")) and not DEMO
+    return _truthy(_creds().get("location")) and not DEMO
 
 def _positions(sql, args):
     if not os.path.exists(DB):
@@ -2933,19 +2940,24 @@ def _positions(sql, args):
         conn.close()
 
 def location_latest():
-    out = {"enabled": _location_on(), "lat": None, "lng": None, "ts": None, "age_s": None, "moving": None}
+    """Newest fix + its age, and `since` = the oldest stored fix (so the UI only offers routes for
+    outings that can have one). One indexed query; called every 5 s per open tab."""
+    out = {"enabled": _location_on(), "lat": None, "lng": None, "ts": None, "age_s": None,
+           "moving": None, "since": None}
     if out["enabled"]:
-        r = _positions("SELECT ts, lat, lng, moving FROM positions ORDER BY ts DESC LIMIT 1", ())
+        r = _positions("SELECT ts, lat, lng, moving, (SELECT min(ts) FROM positions) "
+                       "FROM positions ORDER BY ts DESC LIMIT 1", ())
         if r:
-            ts, lat, lng, mv = r[0]
-            out.update(ts=ts, lat=lat, lng=lng, moving=bool(mv), age_s=int(time.time()) - ts)
+            ts, lat, lng, mv, since = r[0]
+            out.update(ts=ts, lat=lat, lng=lng, moving=bool(mv), age_s=int(time.time()) - ts, since=since)
     return out
 
 def location_route(t0, t1):
-    if not _location_on() or t1 < t0 or t1 - t0 > ROUTE_MAX_SPAN:
+    """Fixes for one outing's time range (padded). On demand only -- nothing serves the whole history."""
+    if not _location_on() or not (0 <= t0 <= t1 < TS_MAX) or t1 - t0 > ROUTE_MAX_SPAN:
         return {"points": []}
-    rows = _positions("SELECT lat, lng, ts FROM positions WHERE ts BETWEEN ? AND ? ORDER BY ts",
-                      (t0 - ROUTE_PAD, t1 + ROUTE_PAD))
+    rows = _positions("SELECT lat, lng, ts FROM positions WHERE ts BETWEEN ? AND ? ORDER BY ts LIMIT ?",
+                      (t0 - ROUTE_PAD, t1 + ROUTE_PAD, ROUTE_MAX_POINTS))
     return {"points": [[lat, lng, ts] for lat, lng, ts in rows]}
 
 

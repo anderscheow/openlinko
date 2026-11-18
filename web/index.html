@@ -1163,7 +1163,7 @@ function initTripMap(p){
 }
 // ---- find my car (opt-in: "location": true in creds.json -> the logger stores CarLinko's position) ----
 // Read-only: api/location + api/route only read what the logger stored; nothing here calls CarLinko.
-let _fcMap=null, _fcLayer=null, _fcPos=null, _fcRoute=false, _fcOn=false;
+let _fcMap=null, _fcLayer=null, _fcPos=null, _fcRoute=false, _fcOn=false, _fcSince=null, _fcNext=0;
 function fcInit(){
   if(_fcMap||typeof L==='undefined') return !!_fcMap;
   _fcMap=L.map('fcMap',{zoomControl:true,attributionControl:true,scrollWheelZoom:false});
@@ -1184,10 +1184,12 @@ function fcShowCar(){
   $('fcCap').textContent = T('Tap a trip to see its route.');
 }
 async function loadLocation(){
+  if(!_fcOn&&Date.now()<_fcNext) return;          // off: re-check once a minute, not on every 5 s read
   let d; try{ const r=await fetch('api/location',{cache:'no-store'}); if(!r.ok) return; d=await r.json(); }catch(e){ return; }
-  _fcOn=!!d.enabled;
+  _fcOn=!!d.enabled; _fcSince=typeof d.since==='number'?d.since:null;
+  if(!_fcOn) _fcNext=Date.now()+60000;
   const sec=$('findCar');
-  if(!d.enabled||d.lat==null){ sec.style.display='none'; return; }
+  if(!_fcOn||typeof d.lat!=='number'||typeof d.lng!=='number'){ sec.style.display='none'; return; }
   const was=sec.style.display==='none'; sec.style.display='';
   $('fcAge').textContent = T('last seen')+' '+(d.age_s!=null?ago(d.age_s/60)+' '+T('ago'):'')+' · '+T(d.moving?'moving':'parked');
   const ll=d.lat.toFixed(6)+','+d.lng.toFixed(6);
@@ -1213,7 +1215,7 @@ async function fcShowRoute(t){
   $('fcCap').textContent=T('Route')+' · '+t.day+' · '+t.from+(t.to!==t.from?'–'+t.to:'')+' · '+t.km+' km';
   sec.scrollIntoView({behavior:'smooth',block:'center'});
 }
-$('fcBack').addEventListener('click',()=>fcShowCar());
+{ const fb=$('fcBack'); if(fb) fb.addEventListener('click',()=>fcShowCar()); }
 function gmapsLink(fromO, toO, stops){
   // no origin -> Google navigates from "My Location" (avoids the fixed-pin vs current-GPS reroute fight)
   let u='https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(toO);
@@ -1902,9 +1904,9 @@ function guardBanner(el, g, reload){
 async function load(live){
   // Always read the box's own DB, which the --stream logger keeps <30s fresh. Never api/refresh:
   // that opens a 2nd CarLinko socket per call, which fights the streamer's persistent one.
+  const locP=loadLocation();                            // opt-in car position, read alongside the summary
   let d; try{ d=await (await fetch('api/summary',{cache:'no-store'})).json(); }catch(e){ return; }
   DATA=d;
-  loadLocation();                                       // opt-in car position (no-op when off)
   syncResyncSeg();
   applyCurrency();                                       // symbol/labels from server currency config
   { const db=$('demoBanner'); if(db) db.style.display = d.demo? 'block':'none'; }
@@ -2025,13 +2027,14 @@ async function load(live){
   // trips
   // outings (fragments parked <20 min apart folded server-side, same as v2's day card);
   // no per-trip kWh: the SoC drop often lands while parked, so it only matches per day
+  await locP;                                           // rows need to know if location is on
   const tl=$('tripList'); tl.replaceChildren(); const trips=d.outings||[];
   trips.forEach(t=>{ const row=document.createElement('div'); row.className='trip';
     const parts=[t.day, t.from+(t.to!==t.from?'–'+t.to:'')];
     row.innerHTML=`<div><div class="km num">${t.km}<u>km</u></div><div class="when">${parts.join(' · ')}</div></div>`+
       `<div class="r"><div class="eff num">${t.min||'<1'}<u>min</u></div>`+
       `<div class="sub2">${t.avg_kmh!=null?T('avg')+' '+t.avg_kmh+' km/h':''}</div></div>`;
-    if(_fcOn&&t.start_ts){ row.classList.add('hasroute'); row.addEventListener('click',()=>fcShowRoute(t)); }
+    if(_fcOn&&_fcSince!=null&&t.end_ts>=_fcSince){ row.classList.add('hasroute'); row.addEventListener('click',()=>fcShowRoute(t)); }
     tl.append(row); });
   $('tripCount').textContent = trips.length? trips.length+' '+T('shown'):'';
   if(!trips.length) tl.innerHTML='<div class="cap" style="text-align:left">'+T('No trips yet — drive and they appear here.')+'</div>';
