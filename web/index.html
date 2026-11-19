@@ -1162,7 +1162,7 @@ function initTripMap(p){
   _tripMap.fitBounds(L.latLngBounds(route).pad(0.12));
   setTimeout(()=>{ try{_tripMap.invalidateSize();}catch(e){} },140);
 }
-// ---- find my car (opt-in: "location": true in creds.json -> the logger stores CarLinko's position) ----
+// ---- find my car (opt-in: switched on in the v2 dashboard's Location page, or creds.json `location` as the default -> the logger stores CarLinko's position) ----
 // Read-only: api/location + api/route only read what the logger stored; nothing here calls CarLinko.
 let _fcMap=null, _fcLayer=null, _fcPos=null, _fcRoute=false, _fcOn=false, _fcSince=null, _fcNext=0;
 function fcInit(){

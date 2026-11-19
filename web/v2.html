@@ -411,6 +411,7 @@
     transition:transform var(--t-fast) var(--eo),opacity var(--t-mid) linear}
   .bigbtn:active{transform:scale(.985)}
   .bigbtn:disabled{opacity:.35}
+  .bigbtn.alt.bad{color:var(--bad)}
   .locmap{height:320px;border-radius:var(--r3);overflow:hidden;box-shadow:var(--sh-1);background:var(--card-2);z-index:0}
   .locbtns{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3);margin-top:var(--s4)}
   .locbtns .bigbtn{margin-top:0;text-align:center;text-decoration:none}
@@ -1549,7 +1550,7 @@ function renderCards(){
   $('rowsHost').innerHTML = '<div class="rowcard">' +
     row('chart', 'Energy consumption', cons, '', 'energy') +
     row('car',   'Distance',  distSub, '', 'dist') +
-    (locOn() ? row('find', 'Location', locSub(), '', 'loc') : '') +
+    (LOCV.d ? row('find', 'Location', locRowSub(), '', 'loc') : '') +
     row('seat',  'Seats', seatsKnown ? 'Active' : (seatCaps ? 'Off' : 'Not available'), '',
         seatCaps ? 'ac' : null) +
     row('list',  'Activity', 'Commands and alerts', '', 'activity') +
@@ -2567,23 +2568,38 @@ function shiftMonth(dir){
   renderDist();
 }
 
-// ---- location (opt-in: "location": true in creds.json; the logger stores CarLinko's position) ----
-// Read-only: api/location + api/route only read what the logger stored; nothing here calls CarLinko.
-// Leaflet is loaded the first time the page opens, so the home screen stays as light as before.
-const LOCV = {d: null, next: 0, map: null, layer: null, route: null};
-function locOn(){ const d = LOCV.d; return !!(d && d.enabled && typeof d.lat === 'number' && typeof d.lng === 'number'); }
+// ---- location (opt-in: switched on here, or "location": true in creds.json as the default) ----
+// Read-only apart from the switch: api/location + api/route only read what the logger stored; nothing
+// here calls CarLinko. Leaflet is loaded the first time the page opens, so the home screen stays as light.
+// status: off | waiting | unsupported | ok. Any dashboard that serves api/location gets the row, so the
+// switch is findable; an older one sends no `status` and is read from enabled + lat/lng.
+const LOCV = {d: null, next: 0, map: null, layer: null, route: null, view: null};
+function locStatus(){ const d = LOCV.d; if(!d) return null;
+  return d.status || (!d.enabled ? 'off' : typeof d.lat === 'number' ? 'ok' : 'waiting'); }
+function locOn(){ const d = LOCV.d; return locStatus() === 'ok' && typeof d.lat === 'number' && typeof d.lng === 'number'; }
+// the layout on screen: its own value per status, so a status change redraws the text as well
+function locView(){ const st = locStatus(); return st === 'off' ? 'off' : st === 'unsupported' ? 'unsupported' : locOn() ? 'map' : 'waiting'; }
 function locAgo(s){ return s == null ? '' : s < 90 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago'
   : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'; }
-function locSub(){ const d = LOCV.d; return (d.moving ? 'Moving' : 'Parked') + ' · ' + locAgo(d.age_s); }
+function locSub(){ const d = LOCV.d; return (d.moving ? 'Moving' : 'Parked') + ' \u00b7 ' + locAgo(d.age_s); }
+function locRowSub(){ const st = locStatus();
+  return st === 'off' ? 'Off' : st === 'unsupported' ? 'Not available for this car'
+       : st === 'waiting' ? 'Waiting for the first position' : locSub(); }
+function locNote(){ const st = locStatus();
+  if(st === 'unsupported') return 'CarLinko has no position for this car (error 50052), so there is nothing to show. Turn location off and on to try again.';
+  if(st === 'waiting') return 'Location is on. The first position is read shortly after switching on, then while you drive and once more when the car stops.';
+  return 'No position has been recorded yet.'; }
 async function locFetch(){
   if(LOCV.d && !LOCV.d.enabled && Date.now() < LOCV.next) return;      // off: re-check every 5 min
-  const first = !LOCV.d;
   let d; try{ d = await api('api/location'); }catch(e){ return; }
-  if(!d || typeof d !== 'object') return;
-  const was = locOn(); LOCV.d = d;
-  if(!d.enabled) LOCV.next = Date.now() + 300000;
-  if(S && (was !== locOn() || locOn())) renderCards();                 // show/hide/refresh the home row
-  if(openKey === 'loc'){ if(first) renderLoc(); else if(!LOCV.route) locShowCar(false); }
+  if(d && typeof d === 'object') locTake(d);
+}
+function locTake(d){                  // a poll, or the answer to the switch: the same payload
+  const was = locStatus(); LOCV.d = d;
+  LOCV.next = d.enabled ? 0 : Date.now() + 300000;
+  if(S && (was !== locStatus() || locOn())) renderCards();             // show/hide/refresh the home row
+  if(openKey !== 'loc') return;
+  if(locView() !== LOCV.view) renderLoc(); else if(locView() === 'map' && !LOCV.route) locShowCar(false);
 }
 let leafletP = null;
 function needLeaflet(){
@@ -2632,7 +2648,7 @@ function locOutings(){
 function locShowCar(reset){
   if(reset) LOCV.route = null;
   const cap = $('locCap'), back = $('locBack');
-  if(!locOn()){ if(cap) cap.textContent = LOCV.d ? 'Location is off, or no position has been recorded yet.' : 'Loading…'; return; }
+  if(!locOn()){ if(cap) cap.textContent = LOCV.d ? locNote() : 'Loading…'; return; }
   const d = LOCV.d;
   locLinks(d.lat, d.lng);
   if(cap && !LOCV.route) cap.textContent = locSub();
@@ -2658,9 +2674,59 @@ async function locRoute(o){
   $('locBack').hidden = false;
   $('pgLoc').scrollTo({top: 0, behavior: 'smooth'});
 }
-async function renderLoc(){
-  const el = $('pgLocBody'), d = LOCV.d || {}, outs = locOutings();
-  LOCV.route = null;
+function locControls(){
+  return '<div class="locbtns"><button class="bigbtn alt" id="locOff">Turn off</button>' +
+    '<button class="bigbtn alt bad" id="locErase">Erase location history</button></div>';
+}
+function locWire(){ $('locOff').onclick = () => locSet(false, false); $('locErase').onclick = locErase; }
+// The switch. The answer is the same payload as api/location, so the page flips at once, no re-poll.
+async function locSet(on, allowOpen){
+  const btns = [...$('pgLocBody').querySelectorAll('button.bigbtn')]; btns.forEach(b => b.disabled = true);
+  let d; try{ d = await post('api/location/settings', {enabled: on, allow_open: !!allowOpen}); }catch(e){ d = null; }
+  btns.forEach(b => b.disabled = false);
+  if(d && d.ok){ buzz(8); locTake(d); toast(on ? 'Location is on' : 'Location is off'); return; }
+  if(d && d.error === 'not_gated' && $('locMsg')){
+    $('locMsg').textContent = 'Set a dashboard password first. Without one, anyone who can open this dashboard could see where your car is.';
+    $('locMsg').hidden = false; $('locAnyway').hidden = false; return;
+  }
+  toast('Could not change that, try again');
+}
+async function locErase(){
+  if(!(await ask('Erase location history?', 'Every stored position is deleted and trips lose their routes. This cannot be undone.'))) return;
+  let d; try{ d = await post('api/location/erase', {}); }catch(e){ d = null; }
+  if(!(d && d.ok)){ toast('Could not erase, try again'); return; }
+  toast(d.deleted === 1 ? '1 position erased' : d.deleted + ' positions erased');
+  LOCV.next = 0; locFetch();
+}
+function renderLocOff(el){
+  const days = LOCV.d.keep_days;
+  el.innerHTML = '<div class="lochead">Find my car</div>' +
+    '<div class="note" style="margin-top:0">Turn this on and the dashboard records where the car is while you drive, and once more when it stops, so you can find it and replay each trip on a map.</div>' +
+    '<div class="note">It stores where your car has been' +
+      (days === 0 ? ', with no time limit' : days > 0 ? ', for ' + days + ' days' : '') +
+      '. The position is read from CarLinko and kept on this dashboard only. You can turn it off or erase the history here at any time.</div>' +
+    '<button class="bigbtn" id="locOn">Turn on location</button>' +
+    '<div class="note" id="locMsg" hidden></div>' +
+    '<button class="bigbtn alt" id="locAnyway" hidden>Turn on anyway</button>';
+  $('locOn').onclick = () => locSet(true, false);
+  $('locAnyway').onclick = () => locSet(true, true);
+}
+function renderLocNote(el){
+  el.innerHTML = '<div class="lochead">Find my car</div><div class="note" style="margin-top:0">' + locNote() + '</div>' +
+    locControls();
+  locWire();
+}
+function renderLoc(){
+  const el = $('pgLocBody');
+  if(LOCV.map){ try{ LOCV.map.remove(); }catch(e){} LOCV.map = null; }
+  LOCV.route = null; LOCV.view = LOCV.d ? locView() : null;
+  if(!LOCV.d){ el.innerHTML = '<div class="note" style="margin-top:0">Loading\u2026</div>'; return; }
+  if(LOCV.view === 'off') renderLocOff(el);
+  else if(LOCV.view === 'map') renderLocMap(el);
+  else renderLocNote(el);
+}
+async function renderLocMap(el){
+  const d = LOCV.d, outs = locOutings();
   el.innerHTML = '<div class="locmap" id="locMap"></div>' +
     '<div class="note" id="locCap" style="margin-top:var(--s3)"></div>' +
     '<div class="locbtns"><a class="bigbtn" id="locNav" rel="noopener">Navigate</a>' +
@@ -2674,7 +2740,9 @@ async function renderLoc(){
       '<span class="rv">' + o.km + ' km</span>' + CHEV + '</button>').join('') + '</div>'
     : '<div class="note" style="margin-top:0">' + (d.since == null ? 'No positions recorded yet — routes appear after the next drive.'
                                                                   : 'No trips with a recorded route yet.') + '</div>') +
-    '<div class="note">Position from CarLinko’s cloud, read by the logger while you drive. Tap a trip to see its route.</div>';
+    '<div class="note">Position from CarLinko’s cloud, read by the logger while you drive. Tap a trip to see its route.</div>' +
+    locControls();
+  locWire();
   $('locShare').onclick = locShare;
   $('locBack').onclick = () => locShowCar(true);
   el.querySelectorAll('[data-oi]').forEach(b => b.onclick = () => { buzz(6); locRoute(outs[Number(b.dataset.oi)]); });
