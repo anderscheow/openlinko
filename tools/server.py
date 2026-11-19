@@ -13,6 +13,7 @@ import log_setup
 import maintenance
 import maintenance_records as maint
 import pricing
+import location_settings
 
 log_setup.configure()
 LOG = logging.getLogger("carlinko.server")
@@ -49,6 +50,7 @@ CAPABILITIES = (
     "service_centres",
     "maintenance_records",
     "price_book",
+    "car_location",           # /api/location, /api/route and the switch: the build serves them, on or off
 )
 
 # All Voltmoss installations send to the same publisher-operated relay. The
@@ -2914,19 +2916,15 @@ def control_verdict(op, data):
 
 # ---- car location (opt-in, #23): read-only views of the positions the logger stores ----
 # The server never calls /maps/deviceLocate itself: the logger is the single writer (one session,
-# one poller), every dashboard just reads. Off unless "location": true in creds.json; never in demo.
+# one poller), every dashboard just reads. Off until the owner switches it on (location_settings.py); never in demo.
 ROUTE_PAD = 300           # s either side of an outing: picks up the fix read as it stopped
 ROUTE_MAX_SPAN = 3 * 86400
 ROUTE_MAX_POINTS = 20000  # 3 days of non-stop driving at the 10 s minimum interval is ~26k; plenty
 TS_MAX = 2 ** 40          # sanity bound for ?from/?to (SQLite INTEGER would overflow on silly input)
 
-def _truthy(v):
-    if isinstance(v, bool): return v
-    if isinstance(v, (int, float)): return v != 0
-    return str(v or "").strip().lower() in ("1", "true", "yes", "on")     # so "false" is off
-
 def _location_on():
-    return _truthy(_creds().get("location")) and not DEMO
+    """The switch (location.json, else creds.json's `location`: see location_settings.py). Never in demo."""
+    return (not DEMO) and location_settings.enabled(_DATA, _creds())
 
 def _positions(sql, args):
     if not os.path.exists(DB):
@@ -2934,23 +2932,60 @@ def _positions(sql, args):
     conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=5)
     try:
         return conn.execute(sql, args).fetchall()
-    except sqlite3.OperationalError:          # no positions table yet (logger not restarted with location on)
+    except sqlite3.OperationalError:          # no positions table yet (location never switched on)
         return []
     finally:
         conn.close()
 
+def _location_status(enabled, has_fix):
+    """Why there is, or is not, a pin: off (switched off, or demo), unsupported (CarLinko answered 50052
+    for this car), waiting (on, nothing recorded yet) or ok."""
+    if not enabled:
+        return "off"
+    if location_settings.unsupported(_DATA):
+        return "unsupported"
+    return "ok" if has_fix else "waiting"
+
 def location_latest():
-    """Newest fix + its age, and `since` = the oldest stored fix (so the UI only offers routes for
+    """Where car location stands, and the newest fix + its age. `gated` = a dashboard password is set,
+    `keep_days` = the retention, `since` = the oldest stored fix (so the UI only offers routes for
     outings that can have one). One indexed query; called every 5 s per open tab."""
-    out = {"enabled": _location_on(), "lat": None, "lng": None, "ts": None, "age_s": None,
-           "moving": None, "since": None}
-    if out["enabled"]:
-        r = _positions("SELECT ts, lat, lng, moving, (SELECT min(ts) FROM positions) "
-                       "FROM positions ORDER BY ts DESC LIMIT 1", ())
-        if r:
-            ts, lat, lng, mv, since = r[0]
-            out.update(ts=ts, lat=lat, lng=lng, moving=bool(mv), age_s=int(time.time()) - ts, since=since)
+    enabled = _location_on()
+    out = {"enabled": enabled, "status": "off", "gated": _gated(),
+           "keep_days": location_settings.keep_days(_creds()),
+           "lat": None, "lng": None, "ts": None, "age_s": None, "moving": None, "since": None}
+    if not enabled:
+        return out
+    r = _positions("SELECT ts, lat, lng, moving, (SELECT min(ts) FROM positions) "
+                   "FROM positions ORDER BY ts DESC LIMIT 1", ())
+    if r:
+        ts, lat, lng, mv, since = r[0]
+        out.update(ts=ts, lat=lat, lng=lng, moving=bool(mv), age_s=int(time.time()) - ts, since=since)
+    out["status"] = _location_status(True, bool(r))
     return out
+
+def location_set_enabled(on):
+    """Flip the switch (it survives a redeploy: location.json, not creds.json) and say where that leaves
+    things. Switching off never deletes what was stored: that is location_erase()."""
+    location_settings.set_enabled(_DATA, on)
+    return {"ok": True, **location_latest()}
+
+def location_erase():
+    """Every stored fix, gone, whether or not location is on. The logger keeps its own handle open, so
+    a brief write lock is waited out; a lock that outlasts the wait raises rather than saying 0."""
+    if not os.path.exists(DB):
+        return 0
+    conn = sqlite3.connect(DB, timeout=15)
+    try:
+        n = conn.execute("DELETE FROM positions").rowcount
+        conn.commit()
+        return max(n, 0)
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):                 # location was never on
+            return 0
+        raise
+    finally:
+        conn.close()
 
 def location_route(t0, t1):
     """Fixes for one outing's time range (padded). On demand only -- nothing serves the whole history."""
@@ -3567,8 +3602,40 @@ class H(BaseHTTPRequestHandler):
             return
         self._send(200, json.dumps(result).encode(), "application/json")
 
+    def _location_write(self, path):
+        """POST /api/location/settings {enabled, allow_open?} and /api/location/erase: switch car location
+        on or off, or delete every stored fix. Behind the same session as the reads, and JSON-only like
+        /api/relogin, so a cross-site form cannot flip it."""
+        if not self._authed():
+            self._send(401, b'{"error":"auth"}', "application/json"); return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 4096 or "application/json" not in (self.headers.get("Content-Type") or ""):
+                raise ValueError("not a small JSON request")
+            body = json.loads(self.rfile.read(n).decode() or "{}")
+            if not isinstance(body, dict):
+                raise ValueError("not an object")
+            if path.endswith("/settings") and not isinstance(body.get("enabled"), bool):
+                raise ValueError("enabled must be true or false")
+        except (ValueError, UnicodeDecodeError):
+            self._send(400, b'{"error":"bad_request"}', "application/json"); return
+        if DEMO:
+            self._send(409, b'{"error":"demo"}', "application/json"); return
+        if path.endswith("/erase"):
+            try:
+                res = {"ok": True, "deleted": location_erase()}
+            except sqlite3.OperationalError as e:
+                _log_exception("%s %s failed" % (self.command, path), e)
+                self._send(503, b'{"error":"busy"}', "application/json"); return
+            self._send(200, json.dumps(res).encode(), "application/json"); return
+        if body["enabled"] and not _gated() and body.get("allow_open") is not True:
+            self._send(409, b'{"error":"not_gated"}', "application/json"); return
+        self._send(200, json.dumps(location_set_enabled(body["enabled"])).encode(), "application/json")
+
     def do_POST(self):
         path = self.path.split("?")[0]
+        if path in ("/api/location/settings", "/api/location/erase"):
+            self._location_write(path); return
         if path == "/api/maintenance/receipts":
             self._maintenance_write(path); return
         if path == "/api/charges/prices":

@@ -2,6 +2,8 @@
 """Checks for the opt-in car location feature (#23): the logger's cached-position reader and the
 server's two read-only views. Nothing here touches the network or the owner's real data."""
 import atexit
+import contextlib
+import io
 import json
 import math
 import os
@@ -21,6 +23,7 @@ atexit.register(_TMP.cleanup)
 os.environ["CARLINKO_DATA"] = _TMP.name        # both modules read it at import: never the real creds.json
 sys.path.insert(0, os.path.dirname(__file__))
 import auth
+import location_settings
 import logger
 import server
 
@@ -70,9 +73,9 @@ class FixTest(unittest.TestCase):
             self.assertEqual(logger._loc_int("location_keep_days", 90, -1, 36500), 90)
         with patch.dict(logger._C, {"location_interval": 1}):
             self.assertEqual(logger._loc_int("location_interval", 30, 10, 86400), 10)   # clamped, not obeyed
-        self.assertFalse(logger._loc_flag("false"))
-        self.assertTrue(logger._loc_flag("true"))
-        self.assertFalse(logger._loc_flag(None))
+        self.assertFalse(location_settings.flag("false"))
+        self.assertTrue(location_settings.flag("true"))
+        self.assertFalse(location_settings.flag(None))
 
 
 class LocateTest(unittest.TestCase):
@@ -182,7 +185,8 @@ class MotionAndRetentionTest(unittest.TestCase):
             logger._loc_purge(self.conn)                                  # location was never on
 
 
-class ServerTest(unittest.TestCase):
+class ServerHarness(unittest.TestCase):
+    """A dashboard on a throwaway data dir; no tests of its own."""
     def setUp(self):
         self.data = tempfile.TemporaryDirectory()
         self.addCleanup(self.data.cleanup)
@@ -221,6 +225,27 @@ class ServerTest(unittest.TestCase):
             self.addCleanup(e.close)
             return e.code, None
 
+    def post(self, path, body=None, cookie=None, ctype="application/json", raw=None):
+        data = raw if raw is not None else json.dumps(body).encode()
+        headers = {"Content-Type": ctype} if ctype else {}
+        if cookie:
+            headers["Cookie"] = cookie
+        req = urllib.request.Request(self.base + path, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            self.addCleanup(e.close)
+            try:
+                return e.code, json.loads(e.read().decode() or "null")
+            except ValueError:
+                return e.code, None
+
+    def settings_file(self):
+        return os.path.join(self.data.name, "location.json")
+
+
+class ServerTest(ServerHarness):
     def test_off_by_default_even_when_positions_exist(self):
         self.seed([(self.now - 10, 3.139, 101.6869, 1)])
         for creds in ({}, {"location": False}, {"location": "false"}, {"location": 0}):
@@ -273,6 +298,278 @@ class ServerTest(unittest.TestCase):
         for path in ("/api/location", "/api/route?from=0&to=%d" % self.now):
             self.assertEqual(self.get(path)[0], 401, path)
             self.assertEqual(self.get(path, "sid=" + server.make_session())[0], 200, path)
+
+
+class SettingsTest(unittest.TestCase):
+    """location_settings.py: where the switch lives, and why it is not creds.json."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.d = self.dir.name
+
+    def write(self, name, text):
+        with open(os.path.join(self.d, name), "w") as f:
+            f.write(text)
+
+    def test_the_file_beats_creds_and_creds_is_only_the_default(self):
+        self.assertFalse(location_settings.enabled(self.d))                      # nothing anywhere: off
+        self.write("creds.json", json.dumps({"location": True}))
+        self.assertTrue(location_settings.enabled(self.d))                       # creds default
+        self.write("location.json", json.dumps({"enabled": False}))
+        self.assertFalse(location_settings.enabled(self.d))                      # the owner's switch wins
+        self.write("creds.json", json.dumps({"location": False}))
+        self.write("location.json", json.dumps({"enabled": True}))
+        self.assertTrue(location_settings.enabled(self.d))
+        self.assertTrue(location_settings.enabled(self.d, {"location": False}))  # creds passed in: still the file
+
+    def test_a_garbage_file_is_ignored_and_an_unreadable_value_is_off(self):
+        self.write("creds.json", json.dumps({"location": True}))
+        for junk in ("", "{", "[]", "null", '"on"', "{}", '{"other": 1}'):
+            self.write("location.json", junk)
+            self.assertTrue(location_settings.enabled(self.d), junk)             # falls back to creds
+        self.write("location.json", json.dumps({"enabled": "maybe"}))
+        self.assertFalse(location_settings.enabled(self.d))                      # never read as the creds default
+        self.write("location.json", json.dumps({"enabled": "true"}))
+        self.assertTrue(location_settings.enabled(self.d))
+
+    def test_the_write_is_atomic_and_owner_only(self):
+        location_settings.set_enabled(self.d, True)
+        path = os.path.join(self.d, "location.json")
+        self.assertEqual(json.load(open(path)), {"enabled": True})
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertEqual([f for f in os.listdir(self.d) if f.endswith(".tmp")], [])
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                location_settings.set_enabled(self.d, False)
+        self.assertEqual(json.load(open(path)), {"enabled": True})               # the old file is intact
+        self.assertEqual([f for f in os.listdir(self.d) if f.endswith(".tmp")], [])
+
+    def test_the_unsupported_marker_is_cleared_by_switching_on_only(self):
+        self.assertFalse(location_settings.unsupported(self.d))
+        location_settings.mark_unsupported(self.d, 1234.9)
+        self.assertEqual(json.load(open(os.path.join(self.d, "location_state.json"))), {"unsupported_at": 1234})
+        self.assertTrue(location_settings.unsupported(self.d))
+        location_settings.set_enabled(self.d, False)                             # off keeps what the cloud said
+        self.assertTrue(location_settings.unsupported(self.d))
+        location_settings.set_enabled(self.d, True)                              # on asks again
+        self.assertFalse(location_settings.unsupported(self.d))
+        for junk in ("", "{", "[]", '{"unsupported_at": "x"}', '{"unsupported_at": true}', '{"unsupported_at": 0}'):
+            self.write("location_state.json", junk)
+            self.assertFalse(location_settings.unsupported(self.d), junk)
+
+    def test_keep_days(self):
+        for creds, want in (({}, 90), ({"location_keep_days": 30}, 30), ({"location_keep_days": "7"}, 7),
+                            ({"location_keep_days": 0}, 0), ({"location_keep_days": -5}, 90),
+                            ({"location_keep_days": "soon"}, 90), ({"location_keep_days": ""}, 90),
+                            ({"location_keep_days": 10 ** 9}, 36500), (None, 90)):
+            self.assertEqual(location_settings.keep_days(creds), want, creds)
+
+
+class SwitchTest(ServerHarness):
+    """The dashboard side of the switch: status values, the two POST routes, the capability."""
+
+    def test_the_capability_is_advertised_on_or_off_but_never_in_demo(self):
+        for creds in ({}, {"location": True}):
+            self.creds(**creds)
+            _, st = self.get("/api/status")
+            self.assertIn("car_location", st["capabilities"], creds)
+        self.assertEqual(st["capabilities"], list(server.CAPABILITIES))
+        with patch.object(server, "DEMO", True):
+            _, demo = self.get("/api/status")
+        self.assertNotIn("car_location", demo["capabilities"])
+
+    def test_get_reports_why_there_is_no_pin(self):
+        _, d = self.get("/api/location")
+        self.assertEqual((d["enabled"], d["status"], d["gated"], d["keep_days"]), (False, "off", False, 90))
+        self.creds(location=True, location_keep_days=30)
+        _, d = self.get("/api/location")
+        self.assertEqual((d["enabled"], d["status"], d["keep_days"]), (True, "waiting", 30))   # no table yet
+        self.seed([(self.now - 60, 3.139, 101.6869, 0)])
+        self.assertEqual(self.get("/api/location")[1]["status"], "ok")
+        location_settings.mark_unsupported(self.data.name, self.now)
+        self.assertEqual(self.get("/api/location")[1]["status"], "unsupported")
+        self.creds(location=False)
+        self.assertEqual(self.get("/api/location")[1]["status"], "off")          # off wins over a stale marker
+        server.set_dashboard_password("test-password")
+        self.assertTrue(self.get("/api/location", "sid=" + server.make_session())[1]["gated"])
+
+    def test_both_routes_need_a_session_when_gated(self):
+        server.set_dashboard_password("test-password")
+        sid = "sid=" + server.make_session()
+        for path, body in (("/api/location/settings", {"enabled": True}), ("/api/location/erase", {})):
+            self.assertEqual(self.post(path, body)[0], 401, path)
+            self.assertEqual(self.post(path, body, sid)[0], 200, path)
+        self.assertFalse(os.path.exists(self.settings_file()) and not location_settings.enabled(self.data.name))
+
+    def test_bad_requests_are_400_and_change_nothing(self):
+        for body, kw in (({"enabled": "yes"}, {}), ({"enabled": 1}, {}), ({}, {}), ([True], {}),
+                         ({"enabled": True}, {"ctype": "text/plain"}), ({"enabled": True}, {"ctype": None}),
+                         (None, {"raw": b"{"}), (None, {"raw": b"\xff\xfe"})):
+            self.assertEqual(self.post("/api/location/settings", body, **kw), (400, {"error": "bad_request"}), (body, kw))
+        self.assertEqual(self.post("/api/location/erase", {}, ctype="text/plain")[0], 400)
+        self.assertEqual(self.post("/api/location/erase", None, raw=b"[1]")[0], 400)
+        self.assertFalse(os.path.exists(self.settings_file()))
+
+    def test_switching_an_open_dashboard_on_asks_first(self):
+        self.assertEqual(self.post("/api/location/settings", {"enabled": True}), (409, {"error": "not_gated"}))
+        self.assertEqual(self.post("/api/location/settings", {"enabled": True, "allow_open": "true"})[0], 409)
+        self.assertFalse(os.path.exists(self.settings_file()))
+        status, d = self.post("/api/location/settings", {"enabled": True, "allow_open": True})
+        self.assertEqual(status, 200)
+        self.assertEqual((d["ok"], d["enabled"], d["status"], d["gated"]), (True, True, "waiting", False))
+        self.assertEqual(json.load(open(self.settings_file())), {"enabled": True})
+        status, d = self.post("/api/location/settings", {"enabled": False})        # off never needs allow_open
+        self.assertEqual((status, d["ok"], d["enabled"], d["status"]), (200, True, False, "off"))
+
+    def test_a_gated_dashboard_switches_on_without_allow_open(self):
+        server.set_dashboard_password("test-password")
+        status, d = self.post("/api/location/settings", {"enabled": True}, "sid=" + server.make_session())
+        self.assertEqual((status, d["enabled"], d["gated"]), (200, True, True))
+
+    def test_the_switch_outlives_a_creds_rewrite(self):
+        server.set_dashboard_password("test-password")
+        sid = "sid=" + server.make_session()
+        self.post("/api/location/settings", {"enabled": True}, sid)
+        self.creds(location=False)                         # what railway_start.sh does to creds.json on every boot
+        self.assertTrue(self.get("/api/location", sid)[1]["enabled"])
+        self.creds(location=True)
+        self.post("/api/location/settings", {"enabled": False}, sid)
+        self.assertFalse(self.get("/api/location", sid)[1]["enabled"])
+
+    def test_demo_refuses_both_and_stays_off(self):
+        with patch.object(server, "DEMO", True):
+            self.assertEqual(self.post("/api/location/settings", {"enabled": True}), (409, {"error": "demo"}))
+            self.assertEqual(self.post("/api/location/erase", {}), (409, {"error": "demo"}))
+            self.assertEqual(self.get("/api/location")[1]["status"], "off")
+        self.assertFalse(os.path.exists(self.settings_file()))
+
+    def test_erase_counts_what_it_deleted_and_works_with_location_off(self):
+        self.assertEqual(self.post("/api/location/erase", {}), (200, {"ok": True, "deleted": 0}))   # no table at all
+        self.seed([(self.now - 300, 1.0, 2.0, 1), (self.now - 200, 1.1, 2.1, 1), (self.now - 100, 1.2, 2.2, 0)])
+        self.assertFalse(self.get("/api/location")[1]["enabled"])                  # location is off
+        self.assertEqual(self.post("/api/location/erase", {}), (200, {"ok": True, "deleted": 3}))
+        self.assertEqual(self.post("/api/location/erase", {}), (200, {"ok": True, "deleted": 0}))
+        conn = sqlite3.connect(server.DB)
+        self.assertEqual(conn.execute("select count(*) from positions").fetchone()[0], 0)
+        conn.close()
+
+    def test_a_lock_that_outlasts_the_wait_is_not_reported_as_zero(self):
+        self.seed([(self.now - 100, 1.2, 2.2, 0)])
+        with patch.object(server, "location_erase", side_effect=sqlite3.OperationalError("database is locked")):
+            self.assertEqual(self.post("/api/location/erase", {}), (503, {"error": "busy"}))
+
+    def test_switching_on_forgets_a_50052(self):
+        self.creds(location=True)
+        location_settings.mark_unsupported(self.data.name, self.now)
+        self.assertEqual(self.get("/api/location")[1]["status"], "unsupported")
+        self.post("/api/location/settings", {"enabled": True, "allow_open": True})
+        self.assertEqual(self.get("/api/location")[1]["status"], "waiting")
+
+
+class LoggerSwitchTest(unittest.TestCase):
+    """The location thread follows the switch live: idle while off, lazy table, 50052 idles it."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.d = self.dir.name
+        for name, value in (("_DATA", self.d), ("LOC_PARKED", 0)):
+            p = patch.object(logger, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.locate = MagicMock(return_value=(3.139, 101.6869))
+        p = patch.object(logger, "locate", self.locate)
+        p.start()
+        self.addCleanup(p.stop)
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.executescript(logger.SCHEMA)
+        self.addCleanup(self.conn.close)
+        self.t = 1_800_000_000.0
+        self.out = io.StringIO()
+
+    def tick(self, capture, dt=5):
+        self.t += dt
+        with contextlib.redirect_stdout(self.out):
+            return logger._loc_tick(self.conn, capture, self.t)
+
+    def has_table(self):
+        return bool(self.conn.execute("select 1 from sqlite_master where name='positions'").fetchone())
+
+    def test_the_decision_table(self):
+        for on in (False, True):
+            for blocked in (False, True):
+                for running in (False, True):
+                    want = (("run" if running else "start") if on and not blocked
+                            else ("stop" if running else "idle"))
+                    self.assertEqual(logger._loc_tick_action(on, blocked, running), want, (on, blocked, running))
+
+    def test_off_does_nothing_then_on_starts_lazily_then_off_stops_at_once(self):
+        cap = None
+        for _ in range(3):
+            cap = self.tick(cap)
+        self.assertIsNone(cap)
+        self.assertFalse(self.has_table())                                       # no table while off
+        self.locate.assert_not_called()                                          # and no request
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(cap)
+        self.assertIsNotNone(cap)
+        self.assertTrue(self.has_table())                                        # created on switching on
+        self.locate.assert_not_called()                                          # the start tick only arms it
+        cap = self.tick(cap)
+        self.assertEqual(self.locate.call_count, 1)                              # the owed parked fix
+        self.assertEqual(self.conn.execute("select moving from positions").fetchall(), [(0,)])
+        cap = self.tick(cap)
+        self.assertEqual(self.locate.call_count, 1)                              # parked, nothing owed any more
+        location_settings.set_enabled(self.d, False)
+        cap = self.tick(cap)
+        self.assertIsNone(cap)
+        cap = self.tick(cap, dt=600)
+        self.assertEqual(self.locate.call_count, 1)                              # nothing after off
+        self.assertEqual(self.conn.execute("select count(*) from positions").fetchone()[0], 1)   # data kept
+
+    def test_creds_alone_still_switches_it_on_as_the_default(self):
+        with open(os.path.join(self.d, "creds.json"), "w") as f:
+            json.dump({"location": True}, f)
+        cap = self.tick(None)
+        self.assertIsNotNone(cap)
+        location_settings.set_enabled(self.d, False)                             # the dashboard switch beats it
+        self.assertIsNone(self.tick(cap))
+
+    def test_a_50052_marks_the_state_file_idles_and_resumes_after_off_and_on(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        self.locate.return_value = "unsupported"
+        cap = self.tick(cap)
+        self.assertIsNone(cap)
+        self.assertTrue(location_settings.unsupported(self.d))
+        self.locate.reset_mock()
+        for _ in range(4):
+            cap = self.tick(cap, dt=120)
+        self.assertIsNone(cap)
+        self.locate.assert_not_called()                                          # idle although still switched on
+        location_settings.set_enabled(self.d, False)
+        location_settings.set_enabled(self.d, True)                              # the owner tries again
+        self.locate.return_value = (3.139, 101.6869)
+        cap = self.tick(cap)
+        self.assertIsNotNone(cap)
+        cap = self.tick(cap)
+        self.assertEqual(self.locate.call_count, 1)
+        self.assertEqual(self.conn.execute("select count(*) from positions").fetchone()[0], 1)
+
+    def test_the_log_never_carries_a_coordinate(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)                                                    # on
+        cap = self.tick(cap)                                                     # a fix is stored
+        self.conn.execute("delete from telemetry")                               # then the car "moves": a fix is due
+        self.conn.execute("insert into telemetry(ts, odo_guess) values (?, 1000), (?, 1010)",
+                          (int(self.t) - 250, int(self.t) - 5))
+        self.locate.return_value = "unsupported"
+        cap = self.tick(cap, dt=60)                                              # ... and the cloud says 50052
+        self.assertIsNone(cap)
+        for needle in ("3.139", "101.68"):
+            self.assertNotIn(needle, self.out.getvalue())
+        self.assertIn("50052", self.out.getvalue())
 
 
 if __name__ == "__main__":
