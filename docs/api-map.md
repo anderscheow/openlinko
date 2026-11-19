@@ -182,7 +182,7 @@ evaluator sends the event with no value in that case (`push_evaluator.VOLT12_LOW
 ```json
 {
   "api_version": 2,
-  "capabilities": ["settings_read", "target_soc", "charge_schedule", "scheduled_travel", "vehicle_alerts", "climate_settings", "climate_seats", "maintenance_guide", "service_centres", "maintenance_records", "price_book"]
+  "capabilities": ["settings_read", "target_soc", "charge_schedule", "scheduled_travel", "vehicle_alerts", "climate_settings", "climate_seats", "maintenance_guide", "service_centres", "maintenance_records", "price_book", "car_location"]
 }
 ```
 
@@ -215,6 +215,7 @@ account settings remain unavailable, and so is the price book (its routes answer
 | `service_centres` | `GET /api/service-centres` returns nearby brand service centres and an official locator link for the supplied coordinates. |
 | `maintenance_records` | The owner's maintenance log, kept by the dashboard rather than any one client — see *Maintenance log* below. |
 | `price_book` | Dated charging and fuel prices and per-session price overrides, which price every session, summary and insight — see *Price book* below. |
+| `car_location` | Find my car and per-trip routes from the position the logger stores: `GET /api/location`, `GET /api/route`, `POST /api/location/settings` and `POST /api/location/erase` — see *Car position* below. Advertised whether or not the owner has switched location on; `/api/location`'s `status` says which. Never in demo. |
 
 ### Maintenance log — `maintenance_records`
 
@@ -493,14 +494,40 @@ a client tells by the field being present and by the route answering.
 
 ---
 
-### Car position — `/api/location`, `/api/route` (opt-in)
+### Car position — `car_location`
 
-Both need a session when the dashboard is gated, and answer from the `positions` table that the logger
-fills only when `"location": true` (never in demo). `GET /api/location` returns
-`{enabled, lat, lng, ts, age_s, moving, since}`; `lat`, `lng` and `ts` are null with no fix yet.
+Everything here needs a session when the dashboard is gated, and is off until the owner switches it on.
+No `api_version` bump: the routes and fields are additive.
+
+`GET /api/location` returns `{enabled, status, gated, keep_days, lat, lng, ts, age_s, moving, since}`.
+`lat`, `lng`, `ts`, `age_s`, `moving` and `since` are null until there is a fix. `status` is `off`
+(switched off, or demo), `unsupported` (CarLinko answered `50052` for this car and the logger is idle),
+`waiting` (on, nothing recorded yet) or `ok`. `gated` is whether a dashboard password is set; `keep_days`
+is the retention (0 = forever).
+
 `GET /api/route?from=<ts>&to=<ts>` returns `{points: [[lat, lng, ts], ...]}` for that range padded by
 300 s, at most 3 days and 20000 points; a reversed or oversized range gives `{points: []}` and a
-non-integer `from`/`to` gives 400. No capability ID advertises them: clients read `enabled`.
+non-integer `from`/`to` gives 400.
+
+`POST /api/location/settings` with `{"enabled": true|false, "allow_open": true}` (`allow_open` is optional)
+switches it. It answers 200 `{"ok": true, ...}` plus every field `GET /api/location` returns, so a client
+can show the new state without another read. Errors: 401 `{"error":"auth"}`; 400 `{"error":"bad_request"}`
+when the body is not a small JSON object with a boolean `enabled`, or was not sent as `application/json`;
+409 `{"error":"demo"}`; 409 `{"error":"not_gated"}` when switching **on** while no dashboard password is set
+and `allow_open` is not exactly `true`, so the client can explain that anyone who can open the dashboard
+would see the car, and send it again. Switching off never deletes anything.
+
+`POST /api/location/erase` with `{}` (sent as `application/json`) deletes every stored position and answers
+`{"ok": true, "deleted": N}`, whether or not location is on. 401, 400 and 409 `demo` as above; 503
+`{"error":"busy"}` if the logger's write lock outlasts 15 s (it never reports 0 for a failure).
+
+Where the switch lives: `location.json` (`{"enabled": true}`) in the data directory, else creds.json's
+`location` as the default, else off. It is not in creds.json because `railway_start.sh` rewrites that file
+from `CREDS_JSON` on every boot, which would undo a toggle at the next deploy. The logger reads it every
+5 s, so a switch takes effect without a restart: off, it records nothing and creates no table. When
+CarLinko answers `50052` the logger writes `location_state.json` (`{"unsupported_at": <ts>}`) and idles;
+switching location on again clears it. `location_interval`, `location_parked_interval` and
+`location_keep_days` stay creds.json-only and are read when the logger starts.
 
 ## Standalone access — VALIDATED ✅
 

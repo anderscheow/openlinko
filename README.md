@@ -189,12 +189,14 @@ never sent to any server I control. See **[SECURITY.md](SECURITY.md)** for the f
   services (OpenStreetMap / OSRM) for the trip planner. Nothing else leaves your device.
 - Keep the dashboard private (LAN / Tailscale). If it must face the internet, set a
   `dashboard_password` so `/api/summary` isn't open to the world.
-- **Car location is opt-in** (`"location": true`). When on, `carlinko.db` holds a history of where the
-  car has been, and `/api/location` + `/api/route` serve it. Don't enable it on a dashboard reachable
-  from the internet without a `dashboard_password`. Positions never go into `car_report` or the logs.
-  Turning it off stops new fixes and hides the card; stored fixes still age out after
-  `location_keep_days`. To erase them now, stop the logger and, next to `carlinko.db`, run
-  `python -c "import sqlite3; c=sqlite3.connect('carlinko.db'); c.execute('DROP TABLE IF EXISTS positions'); c.commit()"`.
+- **Car location is opt-in and off until you switch it on**, in the dashboard (Vehicle tab → **Location** →
+  *Turn on location*) or from the Voltmoss app. It applies within seconds, needs no restart, and survives a
+  redeploy: the switch is stored in `location.json` in the data directory, not in `creds.json`, which Railway
+  rewrites from `CREDS_JSON` on every boot. A dashboard with no `dashboard_password` asks you to confirm first,
+  because anyone who can open it could then see where the car is. When on, `carlinko.db` holds a history of where
+  the car has been, and `/api/location` + `/api/route` serve it. Positions never go into `car_report` or the
+  logs. Switching it off stops new fixes and keeps what is stored, which ages out after `location_keep_days`;
+  **Erase location history** on the same page (or `POST /api/location/erase`) deletes it now.
 - Found a security issue? See [SECURITY.md](SECURITY.md) — please report privately, don't open a public issue.
 
 ## Setup
@@ -314,10 +316,10 @@ generates correct ones for your user and paths, so you shouldn't need to.
 | `chemistry` | | `lfp` (default) or `nmc` — picks the battery-care advice |
 | `full_charge_days` | | how often to recommend a 100% charge. Default `7` for LFP, `90` for NMC |
 | `gmaps_key` | | Google Maps key — enables trip planner + SPKLU map (else OSM fallback) |
-| `location` | | `true` turns on **Find my car** and per-trip routes (default `false`). The logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature switches itself off. CarLinko can send the longitude a digit short; for region `sea` the logger repairs that (see `docs/api-map.md`). **Stores where your car has been** — see Privacy below. Restart the logger after changing it |
+| `location` | | the *default* for **Find my car** (default `false`). The normal way to turn it on is the Location switch in the dashboard (Vehicle tab), which overrides this key. When on, the logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature goes idle until you switch it off and on again. CarLinko can send the longitude a digit short; for region `sea` the logger repairs that (see `docs/api-map.md`). **Stores where your car has been** — see Privacy below |
 | `location_interval` | | seconds between fixes while driving, default `30` (min `10`) |
 | `location_parked_interval` | | seconds between fixes while parked, default `0` = none (one fix is still read when the car stops and at start-up). Min `300` when set |
-| `location_keep_days` | | days of positions to keep, default `90`; `0` = forever |
+| `location_keep_days` | | days of positions to keep, default `90`; `0` = forever. Restart the logger after changing this or the two intervals above |
 | `dashboard_password` | | set it (login page → Advanced) to lock the dashboard behind a password — **do this if the URL is reachable from the internet** |
 
 > **Not in Indonesia? `setup.py` now asks.** It offers presets for Indonesia, South Africa, the UK

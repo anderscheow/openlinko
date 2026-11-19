@@ -38,3 +38,10 @@
   totalled: `charging.session_kwh_billed`, `week_kwh_billed`, `month_kwh_billed`, and
   `chg_kwh_billed` / `charges[].kwh_billed` per day and for the month. Costs were already priced on
   it; the web dashboard now shows it first. Additive, no `api_version` bump.
+- Added the `car_location` capability: Find my car and per-trip routes from CarLinko's cached position
+  (`/maps/deviceLocate`). `GET /api/location` (now with `status`, `gated` and `keep_days`), `GET /api/route`,
+  `POST /api/location/settings` and `POST /api/location/erase`; additive, no `api_version` bump. Off until the
+  owner switches it on in the dashboard (Vehicle tab → Location) or a client calls the settings route; the
+  switch is stored in `location.json`, so it takes effect without a restart and survives a Railway redeploy.
+  creds.json's `location` still works as the default. The logger repairs the longitude CarLinko sends a digit
+  short for region `sea`, and goes idle on `50052` until location is switched off and on again.
