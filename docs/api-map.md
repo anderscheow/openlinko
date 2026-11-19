@@ -62,6 +62,23 @@ Notes:
   ChargingManagement, ScheduledCharging, ScheduledTravel, Search/find-car…).
 - Control results / live status come back over the **WebSocket**, not the HTTP response.
 
+## Car position — `/maps/deviceLocate`
+
+`POST {api_base}/maps/deviceLocate`, signed like any other call (the signature covers the timestamp
+only, as for GETs), body `{"sn": "<DEVICE_SN>", "showAddress": 1}`. Found in the v1.14.10 app
+(`getVehiclePositioningData`). Reply: `{"code":"0000","data":{"lat":..,"lng":..,"address":..}}`.
+- It is CarLinko's **cached** last fix: repeated calls return the same value in about 0.5 s. It does not
+  wake the car, and reading it faster than the T-Box reports gives nothing new.
+- `showAddress` must be the integer `0` or `1` (JSON `true` answers `1000`); `GET` answers `1003`. The
+  flag reads inverted: `1` gives `address: null`, `0` gives the reverse-geocoded address (observed
+  2026-11-19, Tiggo 7 CSH).
+- `50052 查询定位失败` means the cloud holds no position for this car (seen on a J5, Indonesia).
+- **The longitude can arrive a digit short.** On a Tiggo 7 CSH in Malaysia (region `sea`) the cloud sent
+  `lng` 10.1… for a car at E 101.x, exactly the real value ÷ 10, and with `showAddress` 0 it geocoded that
+  to Cameroon. The call still answers `0000`, so nothing flags it. `tools/logger.py` reads a `sea`
+  longitude of 10–18 as × 10 and drops any other longitude outside 90–180; other regions pass through
+  unchanged. Seen on one account only.
+
 ## Realtime WebSocket protocol (`:4002`)
 
 ```
@@ -475,6 +492,15 @@ against the hourly cap — and answers `{ok, error, login_guard}`. Neither has a
 a client tells by the field being present and by the route answering.
 
 ---
+
+### Car position — `/api/location`, `/api/route` (opt-in)
+
+Both need a session when the dashboard is gated, and answer from the `positions` table that the logger
+fills only when `"location": true` (never in demo). `GET /api/location` returns
+`{enabled, lat, lng, ts, age_s, moving, since}`; `lat`, `lng` and `ts` are null with no fix yet.
+`GET /api/route?from=<ts>&to=<ts>` returns `{points: [[lat, lng, ts], ...]}` for that range padded by
+300 s, at most 3 days and 20000 points; a reversed or oversized range gives `{points: []}` and a
+non-integer `from`/`to` gives 400. No capability ID advertises them: clients read `enabled`.
 
 ## Standalone access — VALIDATED ✅
 

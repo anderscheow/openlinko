@@ -314,7 +314,7 @@ generates correct ones for your user and paths, so you shouldn't need to.
 | `chemistry` | | `lfp` (default) or `nmc` — picks the battery-care advice |
 | `full_charge_days` | | how often to recommend a 100% charge. Default `7` for LFP, `90` for NMC |
 | `gmaps_key` | | Google Maps key — enables trip planner + SPKLU map (else OSM fallback) |
-| `location` | | `true` turns on **Find my car** and per-trip routes (default `false`). The logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature switches itself off. **Stores where your car has been** — see Privacy below. Restart the logger after changing it |
+| `location` | | `true` turns on **Find my car** and per-trip routes (default `false`). The logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature switches itself off. CarLinko can send the longitude a digit short; for region `sea` the logger repairs that (see `docs/api-map.md`). **Stores where your car has been** — see Privacy below. Restart the logger after changing it |
 | `location_interval` | | seconds between fixes while driving, default `30` (min `10`) |
 | `location_parked_interval` | | seconds between fixes while parked, default `0` = none (one fix is still read when the car stops and at start-up). Min `300` when set |
 | `location_keep_days` | | days of positions to keep, default `90`; `0` = forever |
