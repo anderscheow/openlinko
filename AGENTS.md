@@ -29,7 +29,7 @@ intended server code. Run `python3 tools/ci_check.py`,
 `python3 tools/push_contract_selftest.py`,
 `python3 tools/push_dispatcher_selftest.py`, `python3 tools/pricing_selftest.py`,
 `python3 tools/replica_selftest.py`, `python3 tools/location_selftest.py`,
-`python3 tools/google_key_selftest.py` before tagging the dashboard. Run the relay
+`python3 tools/google_key_selftest.py`, `python3 tools/geocode_selftest.py` before tagging the dashboard. Run the relay
 tests in the Voltmoss app repository before tagging a relay release.
 
 The price book (`tools/pricing.py`, capability `price_book`) prices every

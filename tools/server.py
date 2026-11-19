@@ -2600,9 +2600,14 @@ def _service_centres(country, model, lat, lon):
         result["centres"].sort(key=lambda place: place["distance_km"])
     return result
 
-def _g_suggest(q, limit=6):                            # Google Places (New) text search — has coords inline
-    d = _g_post("https://places.googleapis.com/v1/places:searchText",
-                {"textQuery": q, "regionCode": "ID", "maxResultCount": limit},
+def _g_suggest(q, limit=6, near=None):                 # Google Places (New) text search — has coords inline
+    body = {"textQuery": q, "maxResultCount": limit}
+    if os.environ.get("GEOCODE_REGION"):               # optional: a CLDR region code to prefer one country's results
+        body["regionCode"] = os.environ["GEOCODE_REGION"]
+    if near:                                           # a preference for results around here, not a fence
+        body["locationBias"] = {"circle": {"center": {"latitude": near[0], "longitude": near[1]},
+                                           "radius": 50000.0}}
+    d = _g_post("https://places.googleapis.com/v1/places:searchText", body,
                 "places.displayName,places.formattedAddress,places.location")
     out = []
     for pl in d.get("places", []):
@@ -2646,7 +2651,7 @@ def _haversine(la1, lo1, la2, lo2):
     h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
     return 2 * 6371 * math.asin(math.sqrt(h))
 
-def _geocode(q):
+def _geocode(q):                                       # one best place for a typed name, anywhere
     key = "g:" + q.lower()
     if key in _trip_cache: return _trip_cache[key]
     r = None
@@ -2654,9 +2659,8 @@ def _geocode(q):
         try: r = _g_geocode(q)
         except Exception: r = None
     if not r:                                          # OSM fallback (no key / Google miss)
-        d = _http_get("https://nominatim.openstreetmap.org/search",
-                      {"q": q, "format": "json", "countrycodes": "id", "limit": 1})
-        r = (float(d[0]["lat"]), float(d[0]["lon"]), d[0]["display_name"]) if d else None
+        d = _nominatim(q, 1)
+        r = (d[0]["lat"], d[0]["lon"], d[0]["name"]) if d else None
         if not r:
             try:
                 s = _suggest(q, 1)
@@ -2704,7 +2708,56 @@ def _project_km(plat, plon, geom):                     # -> (offset_km, along-ro
         cum += seg
     return best_off, best_cum, best_side
 
-def _spklu_list(lat, lon, r=35000):                    # all candidate charging stations near a point (dicts)
+_OVERPASS = ("https://overpass-api.de/api/interpreter",
+             "https://overpass.kumi.systems/api/interpreter",
+             "https://overpass.private.coffee/api/interpreter")
+def _overpass(query, timeout=45, stagger=6.0):
+    """Run an Overpass query and take the first real answer.
+    Each public instance is slow (28 to 37 s was measured, so `timeout` is generous) or answers 502 for minutes at
+    a time, and one instance alone turned a slow minute into 'no charging stations'. The next instance is only
+    asked once the one before has failed or has had `stagger` seconds, so the worst case is timeout + 2 * stagger,
+    inside the 75 s the Voltmoss app waits. Raises when none of them answered."""
+    import queue
+    answers = queue.Queue()
+    def ask(url):
+        try:
+            d = _http_post(url, {"data": query}, timeout=timeout)
+            if "runtime error" in str(d.get("remark") or ""):     # 200 with a timed-out, partial answer
+                raise RuntimeError(str(d["remark"])[:100])
+            answers.put((True, d))
+        except Exception as e:
+            answers.put((False, e))
+    started, failures = 0, []
+    deadline = time.time() + timeout + stagger * len(_OVERPASS)
+    while True:
+        if started < len(_OVERPASS):
+            threading.Thread(target=ask, args=(_OVERPASS[started],), daemon=True).start()
+            started += 1
+        wait = stagger if started < len(_OVERPASS) else max(0.1, deadline - time.time())
+        try:
+            ok, val = answers.get(timeout=wait)
+        except queue.Empty:
+            if started >= len(_OVERPASS) and time.time() >= deadline:
+                break
+            continue
+        if ok:
+            return val
+        failures.append(val)
+        if len(failures) >= len(_OVERPASS):
+            break
+    raise RuntimeError("Overpass unavailable: " + "; ".join(repr(f)[:60] for f in failures))
+def _charger_els(lat, lon, r):                         # charging stations around a point: points and mapped areas
+    q = f'[out:json][timeout:25];nwr["amenity"="charging_station"](around:{r},{lat},{lon});out center tags;'
+    out = []
+    for e in _overpass(q).get("elements", []):
+        c = e.get("center") or e                       # a site drawn as an area carries its centre
+        if c.get("lat") is None or c.get("lon") is None:
+            continue
+        t = e.get("tags", {})
+        out.append({"name": t.get("name") or t.get("operator") or t.get("brand") or t.get("network") or "SPKLU",
+                    "lat": c["lat"], "lon": c["lon"]})
+    return out
+def _spklu_list(lat, lon, r=35000, strict=False):      # all candidate charging stations near a point (dicts)
     if _gkey():
         try:
             d = _g_post("https://places.googleapis.com/v1/places:searchNearby",
@@ -2716,36 +2769,29 @@ def _spklu_list(lat, lon, r=35000):                    # all candidate charging 
                    for pl in d.get("places", []) if pl.get("location")]
             if out: return out
         except Exception: pass
-    q = f'[out:json][timeout:25];node["amenity"="charging_station"](around:{r},{lat},{lon});out;'
     try:
-        els = _http_post("https://overpass-api.de/api/interpreter", {"data": q}).get("elements", [])
+        els = _charger_els(lat, lon, r)
     except Exception:
+        if strict:                                     # the browse list says it could not look, not that there are none
+            raise
         return []
-    return [{"name": (e.get("tags", {}).get("name") or e.get("tags", {}).get("operator") or "SPKLU"),
-             "lat": e["lat"], "lon": e["lon"], "dc_kw": 0, "conns": None, "avail": None, "updated": None}
-            for e in els]
-
-
+    return [{**e, "dc_kw": 0, "conns": None, "avail": None, "updated": None} for e in els]
 def _nearest_spklu(lat, lon, r=25000):
     if _gkey():                                        # Google has SPKLU coverage OSM lacks
         try:
             b = _g_spklu(lat, lon, max(r, 30000))
             if b: return b
         except Exception: pass
-    q = f'[out:json][timeout:25];node["amenity"="charging_station"](around:{r},{lat},{lon});out;'
     try:
-        els = _http_post("https://overpass-api.de/api/interpreter", {"data": q}).get("elements", [])
+        els = _charger_els(lat, lon, r)
     except Exception:
         return None
     best = None
     for e in els:
         d = _haversine(lat, lon, e["lat"], e["lon"])
-        t = e.get("tags", {})
-        nm = t.get("name") or t.get("operator") or "SPKLU"
         if best is None or d < best[0]:
-            best = (d, nm, e["lat"], e["lon"])
+            best = (d, e["name"], e["lat"], e["lon"])
     return best
-
 def _coord_at_km(geom, target_km):
     cum = 0.0
     for i in range(1, len(geom)):
@@ -2756,36 +2802,60 @@ def _coord_at_km(geom, target_km):
         cum += seg
     return (geom[-1][1], geom[-1][0])
 
-def _photon(q, limit=6):
-    d = _http_get("https://photon.komoot.io/api/",
-                  {"q": q, "limit": limit, "bbox": "95,-11,141,6", "lang": "en"})  # Indonesia bbox
+def _near(lat, lon):
+    """A (lat, lon) to rank results around, or None for 'nowhere in particular'."""
+    try:
+        la, lo = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None
+    return (la, lo) if -90 <= la <= 90 and -180 <= lo <= 180 else None
+def _geo_countries():                                  # optional GEOCODE_COUNTRIES="id,my": keep results to these
+    return [c.strip().lower() for c in os.environ.get("GEOCODE_COUNTRIES", "").split(",") if c.strip()]
+def _label(*parts):                                    # "Pavilion Bukit Jalil, Kuala Lumpur, Malaysia", no repeats
     out = []
-    for f in d.get("features", []):
+    for p in parts:
+        p = (p or "").strip()
+        if p and p not in out: out.append(p)
+    return ", ".join(out)
+def _photon(q, limit=6, near=None):
+    params = {"q": q, "limit": limit, "lang": "en"}
+    if near: params["lat"], params["lon"] = round(near[0], 4), round(near[1], 4)
+    countries = _geo_countries()
+    out = []
+    for f in _http_get("https://photon.komoot.io/api/", params).get("features", []):
         p = f.get("properties", {}); c = f["geometry"]["coordinates"]
-        if p.get("countrycode") and p["countrycode"] != "ID":
+        if countries and (p.get("countrycode") or "").lower() not in countries:
             continue
-        nm = p.get("name") or ""
-        parts = [p.get(k) for k in ("street", "district", "city", "county", "state") if p.get(k)]
-        name = ", ".join([x for x in [nm] + parts if x])
+        nm, street = p.get("name") or "", p.get("street") or ""
+        if not nm and street:                          # an address with no name: "12 Jalan Ampang"
+            nm, street = ((p.get("housenumber") or "") + " " + street).strip(), ""
+        name = _label(nm, street, p.get("district"), p.get("city") or p.get("county"), p.get("state"),
+                      p.get("country"))
         if name:
             out.append({"name": name, "lat": float(c[1]), "lon": float(c[0])})
     return out
-
-def _suggest(q, limit=6):
+def _nominatim(q, limit=6, near=None):
+    params = {"q": q, "format": "json", "limit": limit, "addressdetails": 0}
+    countries = _geo_countries()
+    if countries: params["countrycodes"] = ",".join(countries)
+    if near:                                           # a preference, not a fence: `bounded` stays off
+        la, lo = near
+        params["viewbox"] = "%s,%s,%s,%s" % (lo - 1.5, la + 1.5, lo + 1.5, la - 1.5)
+    d = _http_get("https://nominatim.openstreetmap.org/search", params)
+    return [{"name": x["display_name"], "lat": float(x["lat"]), "lon": float(x["lon"])} for x in d]
+def _suggest(q, limit=6, near=None):
     if not q or len(q) < 3: return []
     if _gkey():
         try:
-            g = _g_suggest(q, limit)
+            g = _g_suggest(q, limit, near)
             if g: return g
         except Exception: pass
     res = []
-    try: res += _photon(q, limit)            # POI-friendly typeahead first
+    try: res += _photon(q, limit, near)      # POI-friendly typeahead first
     except Exception: pass
-    try:
-        d = _http_get("https://nominatim.openstreetmap.org/search",
-                      {"q": q, "format": "json", "countrycodes": "id", "limit": limit, "addressdetails": 0})
-        res += [{"name": x["display_name"], "lat": float(x["lat"]), "lon": float(x["lon"])} for x in d]
-    except Exception: pass
+    if len(res) < limit:                     # Nominatim's public instance is not for typeahead: it only tops up
+        try: res += _nominatim(q, limit - len(res), near)
+        except Exception: pass
     seen, out = set(), []
     for r in res:
         k = (round(r["lat"], 3), round(r["lon"], 3))
@@ -3364,7 +3434,8 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/geocode":                      # autocomplete suggestions for the trip planner
             q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             try:
-                res = _suggest((q.get("q") or [""])[0])
+                near = _near((q.get("lat") or [None])[0], (q.get("lon") or [None])[0])
+                res = _suggest((q.get("q") or [""])[0], near=near)
             except Exception as e:
                 _log_exception("GET /api/geocode failed", e)
                 res = []
@@ -3381,13 +3452,14 @@ class H(BaseHTTPRequestHandler):
                     res = hit[1]
                 else:
                     res = []
-                    for c in _spklu_list(lat, lon, r):
+                    for c in _spklu_list(lat, lon, r, strict=True):
                         res.append({"name": c["name"], "lat": round(c["lat"], 5), "lon": round(c["lon"], 5),
                                     "dist": round(_haversine(lat, lon, c["lat"], c["lon"]), 1),
                                     "dc_kw": c.get("dc_kw", 0), "conns": c.get("conns"),
                                     "avail": c.get("avail"), "updated": c.get("updated")})
                     res.sort(key=lambda x: x["dist"])
-                    _trip_cache[key] = (time.time(), res)
+                    if res:                                    # an empty answer is not worth remembering for 5 minutes
+                        _trip_cache[key] = (time.time(), res)
             except Exception as e:
                 _log_exception("%s %s failed" % (self.command, path), e)
                 res = {"error": repr(e)[:160]}

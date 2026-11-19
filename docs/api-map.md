@@ -529,6 +529,33 @@ CarLinko answers `50052` the logger writes `location_state.json` (`{"unsupported
 switching location on again clears it. `location_interval`, `location_parked_interval` and
 `location_keep_days` stay creds.json-only and are read when the logger starts.
 
+### Place search and chargers — `/api/geocode`, `/api/spklu` (worldwide since 2026-11-19)
+
+Both were Indonesia-only: Google Places ran with `regionCode: "ID"`, Nominatim with `countrycodes=id`, and
+Photon's answers were filtered to `ID`, so a Malaysian owner typing "Pavilion Bukit Jalil" got nothing and
+"Kuala Lumpur" got a village in Gorontalo. Nothing here changes `api_version` or adds a capability ID: the
+route and its answer have the shape they always had, and a client that sends no point gets an unranked search.
+
+- `GET /api/geocode?q=&lat=&lon=` returns up to six `{name, lat, lon}` — places, businesses, streets and
+  addresses anywhere, labelled `name, street, district, city, state, country` without repeats (the country is
+  there to tell two "Starbucks" apart). Photon answers first (it is the one built for typeahead); the public
+  Nominatim instance, whose policy forbids typeahead, is asked only to top up a short list; Google Places
+  answers instead when a key is configured. `lat`/`lon` are optional and say where to rank around — a
+  preference, never a fence (Photon `lat`/`lon`, Nominatim `viewbox` with `bounded` off, Google
+  `locationBias`, 50 km). A missing, half-sent or out-of-range point is no point. Voltmoss sends one decimal of
+  a degree (about 11 km): a search needs the town, not the street.
+- `GEOCODE_COUNTRIES="id,my"` (ISO codes) keeps results to those countries again, for a dashboard that wants
+  the old behaviour; `GEOCODE_REGION="MY"` sets Google's `regionCode`. Neither is set by default.
+- `GET /api/spklu?lat=&lon=&r=` lists charging stations as before, now including the ones mapped as areas
+  (Overpass `nwr` with `out center`: 4 of the 55 within 12 km of Kuala Lumpur), named `name`, else `operator`,
+  `brand` or `network`, else `SPKLU`.
+  The public Overpass instances are slow (30 s is common) and answer 502 for minutes at a time, so they are asked
+  in turn (the next once the one before has failed or had 6 s) and the first real answer wins; a `remark` of
+  `runtime error` is a failure, not an answer. **An outage is `{"error": …}`, never `[]`**, and an empty list
+  is not cached (a failure used to be remembered for five minutes as "no stations here").
+- The trip planner's own lookups (`_spklu_list` without `strict`, `_nearest_spklu`) keep their old contract:
+  a lookup that failed is no candidates, and the plan is made without them.
+
 ## Standalone access — VALIDATED ✅
 
 `research/ws_client.py`: a host-side Python client connects to the WS with **only the token**
