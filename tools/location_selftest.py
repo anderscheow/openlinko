@@ -35,6 +35,35 @@ class FixTest(unittest.TestCase):
                     {"lat": math.nan, "lng": 1}, {"lat": math.inf, "lng": 1}):
             self.assertIsNone(logger._loc_fix(bad), bad)
 
+    def test_sea_region_repairs_the_longitude_the_cloud_sends_a_digit_short(self):
+        # Seen live 2026-11-19: a car in Cheras/Kajang (E 101.77) came back as 10.177414 = real / 10.
+        lat, lng = logger._loc_fix({"lat": 3.048407, "lng": 10.177414}, "sea")
+        self.assertEqual(lat, 3.048407)
+        self.assertAlmostEqual(lng, 101.77414, places=5)
+        for lng_ok in (101.77414, 95.2, 90.0, 140.5, 179.9):             # already inside the region: untouched
+            self.assertEqual(logger._loc_fix({"lat": 3.0, "lng": lng_ok}, "sea"), (3.0, lng_ok))
+
+    def test_sea_region_drops_what_cannot_be_right_instead_of_drawing_it_in_africa(self):
+        for lng_bad in (5.0, 9.9, 18.5, 25.0, -70.0):                    # x10 is not a sea longitude either
+            self.assertIsNone(logger._loc_fix({"lat": 3.0, "lng": lng_bad}, "sea"), lng_bad)
+
+    def test_regions_without_a_known_box_pass_through_unchanged(self):
+        for region in (None, "", "eu", "unknown"):
+            self.assertEqual(logger._loc_fix({"lat": 48.1, "lng": 11.5}, region), (48.1, 11.5), region)
+
+    def test_the_log_says_it_once_and_never_prints_a_coordinate(self):
+        import contextlib, io
+        buf = io.StringIO()
+        with patch.object(logger, "_LOC_SAID", set()), contextlib.redirect_stdout(buf):
+            for _ in range(3):
+                logger._loc_fix({"lat": 3.048407, "lng": 10.177414}, "sea")
+                logger._loc_fix({"lat": 3.048407, "lng": 5.0}, "sea")
+        out = buf.getvalue()
+        self.assertEqual(out.count("digit short"), 1)
+        self.assertEqual(out.count("outside the sea region"), 1)
+        for needle in ("3.048", "10.177", "101.77", "5.0"):
+            self.assertNotIn(needle, out)
+
     def test_config_typos_fall_back_instead_of_raising(self):
         with patch.dict(logger._C, {"location_interval": "soon", "location_keep_days": ""}):
             self.assertEqual(logger._loc_int("location_interval", 30, 10, 86400), 30)
@@ -74,6 +103,14 @@ class LocateTest(unittest.TestCase):
         self.assertEqual(kw["json"], {"sn": "SN1", "showAddress": 1})
         self.assertIs(type(kw["json"]["showAddress"]), int)       # JSON true is answered 1000 "unknown error"
         self.assertEqual(kw["headers"], {"t": "tok"})
+
+    def test_locate_applies_the_account_region_to_the_longitude(self):
+        reply = {"code": "0000", "data": {"lat": 3.048407, "lng": 10.177414, "address": None}}
+        with self.post(reply):                                           # no region in creds: defaults to sea
+            lat, lng = logger.locate()
+        self.assertAlmostEqual(lng, 101.77414, places=5)
+        with self.post(reply), patch.object(logger, "_cfg", lambda: {"device_sn": "SN1", "region": "eu"}):
+            self.assertEqual(logger.locate(), (3.048407, 10.177414))     # another region: not ours to rewrite
 
     def test_50052_means_this_car_has_no_position_in_the_cloud(self):
         with self.post({"code": "50052", "msg": "查询定位失败"}):

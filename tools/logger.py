@@ -450,7 +450,31 @@ def _loc_token():
     except Exception:
         return TOKEN
 
-def _loc_fix(d):
+# CarLinko's cloud has been seen sending a longitude with a digit lost: a Tiggo 7 CSH parked in
+# Cheras/Kajang (E 101.77) came back as 10.177414 -- the real value / 10 -- and the cloud's own
+# reverse geocode put the car in Cameroon (2026-11-19, owner confirmed where the car was). Inside the
+# "sea" region 10-18 E is impossible (it is Africa) while 100-180 E is where its cars are, so that
+# window is read as the real value x 10, and any other longitude outside the region is dropped rather
+# than drawn on the wrong continent. Regions without a known box pass through unchanged.
+LOC_REGION_LNG = {"sea": (90.0, 180.0)}
+
+def _loc_region_lng(lng, region):
+    """lng as it must be for the account's region, or None when it cannot be right there."""
+    box = LOC_REGION_LNG.get(str(region or "").lower())
+    if not box or box[0] <= lng <= box[1]:
+        return lng
+    if lng >= 10 and box[0] <= lng * 10 <= box[1]:   # a 3-digit longitude that lost its first digit
+        return lng * 10
+    return None
+
+_LOC_SAID = set()
+def _loc_once(key, msg):
+    """Say a thing about a bad fix once per run, not every 30 s. No coordinates in the message."""
+    if key not in _LOC_SAID:
+        _LOC_SAID.add(key)
+        print(msg)
+
+def _loc_fix(d, region=None):
     """(lat, lng) from the reply's data, or None for anything that isn't a plausible fix."""
     if not isinstance(d, dict):
         return None
@@ -462,7 +486,14 @@ def _loc_fix(d):
         return None
     if abs(lat) < 1e-6 and abs(lng) < 1e-6:          # 0,0 = a "no fix" placeholder
         return None
-    return lat, lng
+    fixed = _loc_region_lng(lng, region)
+    if fixed is None:
+        _loc_once("outside", f"location: ignoring a fix whose longitude is outside the {region} region")
+        return None
+    if fixed != lng:
+        _loc_once("repaired", "location: CarLinko's longitude is a digit short for the "
+                  f"{region} region; reading it as 10x (its cloud drops the first digit of 3-digit longitudes)")
+    return lat, fixed
 
 def locate():
     """One cached-position read: (lat, lng), "unsupported" (50052), or None (no fix / transient; the
@@ -471,7 +502,8 @@ def locate():
     import requests, auth
     if auth.login_status() is not None:
         return None
-    sn, tok = _cfg().get("device_sn") or SN, _loc_token()
+    cfg = _cfg()
+    sn, tok, region = cfg.get("device_sn") or SN, _loc_token(), cfg.get("region") or "sea"
     if not sn or not tok:
         return None
     try:
@@ -485,7 +517,7 @@ def locate():
         return None
     code = str(r.get("code"))
     if code == "0000":
-        return _loc_fix(r.get("data"))
+        return _loc_fix(r.get("data"), region)
     if code in LOC_UNSUPPORTED:
         return "unsupported"
     if code not in LOC_STALE_TOKEN:
