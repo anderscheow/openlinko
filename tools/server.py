@@ -2,7 +2,7 @@
 Serves the mobile PWA in ./web and a JSON API computed from carlinko.db.
 Run: python server.py [port]   (default 8088, binds 0.0.0.0 so Tailscale can reach it)
 """
-import os, sys, json, time, sqlite3, threading, math, calendar, copy, tempfile, urllib.request, urllib.parse
+import os, sys, json, time, sqlite3, threading, math, calendar, copy, tempfile, urllib.request, urllib.error, urllib.parse
 import logging, traceback
 from collections import deque
 import hmac, hashlib, base64, secrets, re
@@ -2470,11 +2470,47 @@ def _gkey():
     try: return json.load(open(os.path.join(_DATA, "creds.json"))).get("gmaps_key")
     except Exception: return None
 
+# What the last Google Places call did. Every caller swallows a failure and falls back to OpenStreetMap, so a
+# key Google refuses (wrong application restriction, API not enabled, billing off) looks the same as one that
+# works. This is how the log and /api/trip tell which of the two is true.
+_g_health = {"ok": None, "reason": None}
+
+def _g_reason(exc):
+    """Why Google refused, as a short label that cannot hold the key: its ErrorInfo reason, else its status, else the HTTP code."""
+    if not isinstance(exc, urllib.error.HTTPError):
+        return type(exc).__name__
+    try:
+        err = json.loads(exc.read().decode()).get("error", {})
+        reasons = [d["reason"] for d in err.get("details", []) if isinstance(d, dict) and d.get("reason")]
+        return reasons[0] if reasons else err.get("status") or "HTTP %s" % exc.code
+    except Exception:
+        return "HTTP %s" % exc.code
+
+def _g_note(ok, reason=None):
+    before = dict(_g_health)
+    _g_health.update(ok=ok, reason=reason)
+    if not ok and before != _g_health:                 # once per change, not once per request
+        LOG.warning("google places refused the request (%s), using OpenStreetMap instead", reason)
+    elif ok and before["ok"] is False:
+        LOG.info("google places is answering again")
+
+def _g_error():                                        # why Google is not answering, or None when it is (or no key is set)
+    return _g_health["reason"] if _gkey() and _g_health["ok"] is False else None
+
+def _trip_source():                                    # which service answered the trip look-ups
+    return "google" if _gkey() and _g_error() is None else "osm"
+
 def _g_post(url, body, fieldmask, timeout=9):
     req = urllib.request.Request(url, data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json", "X-Goog-Api-Key": _gkey(), "X-Goog-FieldMask": fieldmask})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode())
+    except Exception as e:
+        _g_note(False, _g_reason(e))
+        raise
+    _g_note(True)
+    return data
 
 def _service_centres(country, model, lat, lon):
     """Nearby brand matches; the official locator remains the authority on service capability."""
@@ -2838,7 +2874,7 @@ def trip_plan(frm, to, soc, cons, reserve=10.0, target=80.0, derate=1.0, a=None,
             "geom": g, "start": [round(a[0], 4), round(a[1], 4)], "end": [round(b[0], 4), round(b[1], 4)],
             "total_kwh": round(sum(s["kwh"] for s in stops), 1),
             "total_cost": round(sum(s["cost"] for s in stops)),
-            "src": "google" if _gkey() else "osm"}
+            "src": _trip_source(), "google_error": _g_error()}
 
 # ---- realtime: /api/stream (Server-Sent Events) ----
 # The logger stores each frame the car pushes the moment it lands. One watcher thread looks at the

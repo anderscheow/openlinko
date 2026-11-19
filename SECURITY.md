@@ -23,8 +23,17 @@ cloud and the optional map services above.
 - Prefer to keep the dashboard on a **private network** (LAN or [Tailscale](https://tailscale.com/)).
 - If the dashboard **must** be reachable from the internet, set a `dashboard_password`
   (login page → *Advanced*). Without it, `/api/summary` is open to anyone who finds the URL.
-- Restrict your Google Maps API key in the Google Cloud Console (HTTP referrer / IP allowlist) so a
-  leaked key can't be abused.
+- Restrict your Google Maps API key in the Google Cloud Console so a leaked key can't be abused. The
+  dashboard calls Google from the server and the key never reaches the browser, so:
+  - **API restriction:** allow only **Places API (New)**, the one Google API it uses
+    (`places:searchText`, `places:searchNearby`).
+  - **Application restriction:** **IP addresses**, set to the host's public outbound IP, if it has a fixed
+    one. Do **not** pick *Websites (HTTP referrers)*: a server call sends no `Referer`, so Google refuses
+    every request and the dashboard quietly falls back to OpenStreetMap. A host with no fixed outbound IP
+    (Railway's Hobby plan has none) cannot use an IP allowlist: keep the API restriction, add a daily quota
+    cap and a budget alert instead.
+  - When Google refuses the key, the server logs `google places refused the request (<reason>)` once and the
+    trip planner answers `"src": "osm"`, so a wrong restriction shows up instead of passing for a working key.
 - Use a **second CarLinko account** for the dashboard (see the README) so a shared token isn't tied
   to your primary login.
 
