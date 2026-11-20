@@ -407,7 +407,13 @@ def stream_loop(conn):
 # thread in this process: it reuses the logger's token.txt, never logs in itself, and goes quiet while
 # the login guard holds. Some cars/regions have no position in the cloud and answer 50052
 # (查询定位失败, seen on a J5 in Indonesia); the thread then goes idle until location is switched off
-# and on again in the dashboard.
+# and on again in the dashboard. Cars that do have a position (a Tiggo 7 in Malaysia) also answer 50052
+# now and then, mid-drive, between good fixes, so 50052 only idles the thread when this car has never
+# produced a fix (no row in positions) and LOC_GIVE_UP reads in a row said 50052. Once a fix exists it is
+# "no fix this time" and the schedule carries on. Each fix is also checked against the last good one
+# (_loc_gate): a jump farther than the car could have driven is dropped, unless the same new place comes
+# back LOC_RECOVER times in a row. (Both behaviours are pirates-killer's, from upstream #23, who runs the
+# same model in the same region: 7b47120 and 7725354.)
 # The switch itself (location_settings.py: location.json, else creds.json's `location`) is read every
 # tick, so the dashboard turns it on and off live. The thread always runs and is idle while it is off:
 # no table, no request. The intervals and the retention below are creds.json-only, read at start-up.
@@ -422,15 +428,29 @@ def _loc_int(key, default, lo, hi):
     except (TypeError, ValueError, OverflowError):
         print(f"location: ignoring {key}={v!r} (not a number), using {default}")
         return default
-    return min(max(n, lo), hi)
-
-LOC_EVERY  = _loc_int("location_interval", 30, 10, 86400)
+    m = min(max(n, lo), hi)
+    if m != n:
+        print(f"location: {key}={n} is {'below the minimum' if n < lo else 'above the maximum'}, using {m}")
+    return m
+# The car uploads its position to the cloud about every 30 s (measured on a Tiggo 7: reads 25-30 s apart
+# got the same cached fix back 12-15% of the time), so reading faster only repeats it and loads
+# CarLinko's API. A lower location_interval is raised to LOC_MIN_EVERY; parked reads have their own floor.
+LOC_MIN_EVERY = 30
+LOC_MIN_PARKED = 300
+LOC_EVERY  = _loc_int("location_interval", 30, LOC_MIN_EVERY, 86400)
 LOC_PARKED = _loc_int("location_parked_interval", 0, 0, 7 * 86400)
-LOC_PARKED = max(300, LOC_PARKED) if LOC_PARKED else 0
+if 0 < LOC_PARKED < LOC_MIN_PARKED:
+    print(f"location: location_parked_interval={LOC_PARKED} is below the minimum, using {LOC_MIN_PARKED}")
+    LOC_PARKED = LOC_MIN_PARKED
 LOC_KEEP   = location_settings.keep_days(_C)      # 0 = keep forever; a negative typo is not "forever"
 LOC_TICK   = 5
 LOC_RETRY  = 60           # a failed start-up/stop fix is retried this often until one lands
 LOC_UNSUPPORTED = ("50052",)
+LOC_GIVE_UP = 3           # 50052s in a row, with no fix ever stored, before the thread goes idle
+LOC_VMAX_KMH = 200        # jump check: no car covers more ground than this between two fixes...
+LOC_SLACK_KM = 2.0        # ...plus this much for GPS jitter and the cloud cache's age
+LOC_REPAIR_KM = 500       # lng x 10 is only considered for a jump this big (never for a real drive near lng 0)
+LOC_RECOVER = 3           # this many rejected fixes in a row that agree with each other win (the car did move)
 LOC_STALE_TOKEN = ("9997", "40001", "40003", "401", "1001", "1002")
 LOC_SCHEMA = """
 CREATE TABLE IF NOT EXISTS positions (   -- only created when location is on
@@ -506,7 +526,7 @@ def locate():
     try:
         r = requests.post(auth.api_base() + "/maps/deviceLocate",
                           headers=auth.headers_for({}, token=tok),
-                          json={"sn": sn, "showAddress": 1}, timeout=20).json()   # showAddress must be int 1
+                          json={"sn": sn, "showAddress": 1}, timeout=20).json()   # int; inverted: 1 = no address (all we need), 0 = address
     except Exception as e:                            # network error, timeout, non-JSON reply
         print("location: request failed:", repr(e)[:120])
         return None
@@ -537,6 +557,51 @@ def _loc_moving(conn):
     moved = bool(old and old[0] is not None and odo is not None and odo > old[0])
     return bool((spd or 0) > 0 or moved)
 
+def _loc_km(a, b):
+    """Great-circle (haversine) distance in km between two (lat, lng) points."""
+    p1, p2 = math.radians(a[0]), math.radians(b[0])
+    h = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(b[1] - a[1]) / 2) ** 2)
+    return 2 * 6371.0088 * math.asin(min(1.0, math.sqrt(h)))
+def _loc_frame(conn, ts):
+    """(odometer km, speed km/h) from the newest frame at most 3 min before ts, else (None, None)."""
+    row = conn.execute("SELECT ts, odo_guess, raw FROM telemetry WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
+                       (int(ts),)).fetchone()
+    if not row or ts - row[0] >= 180:
+        return None, None
+    try:
+        spd = decode(row[2]).get("speed") if row[2] else None
+    except (ValueError, TypeError):
+        spd = None
+    return row[1], spd
+def _loc_allow_km(ref, ts, odo):
+    """How far the car can be from ref = (ts, lat, lng, odo) at time ts: 200 km/h for the time between
+    them, but never more than the odometer says it drove when both readings exist (a car parked for a
+    week may be 3 km off, not 33,000), plus slack. A run of 50052s only adds time, so it can't cause a
+    good fix to be dropped."""
+    allow = LOC_VMAX_KMH * max(0.0, ts - ref[0]) / 3600
+    if odo is not None and ref[3] is not None:
+        allow = min(allow, max(0, odo - ref[3]) + 1)  # +1: the odometer counts whole km, it lags up to 1
+    return allow + LOC_SLACK_KM
+def _loc_gate(ref, p, ts, odo):
+    """Judge fix p against the last good fix ref. Returns ("ok", p), ("repaired", p') or ("drop", None).
+    A longitude one digit short (E 101.77 as 10.177) is also tried x 10 and that reading is used when it
+    fits, in any region. The x 10 reading also wins when it is 10 times closer than the raw one, so a long
+    logger outage (no odometer, a huge time allowance) can't let the short value through. Only jumps over
+    LOC_REPAIR_KM qualify, so a real drive near lng 0 (London: -0.12 -> -0.012) is never "repaired".
+    _loc_fix has already repaired what the account's region makes certain; this covers the rest."""
+    if ref is None:
+        return "ok", p
+    allow = _loc_allow_km(ref, ts, odo)
+    d = _loc_km(ref[1:3], p)
+    if abs(p[1] * 10) <= 180:
+        q = (p[0], p[1] * 10)
+        dq = _loc_km(ref[1:3], q)
+        if d > LOC_REPAIR_KM and dq <= allow and dq * 10 < d:
+            return "repaired", q
+    if d <= allow:
+        return "ok", p
+    return "drop", None
 def _loc_purge(conn):
     """Retention. Also run at start-up with location OFF, so an old history still ages out."""
     if LOC_KEEP > 0 and conn.execute(
@@ -558,7 +623,32 @@ class _LocCapture:
         conn.executescript(LOC_SCHEMA)            # only now: a car with location off never gets the table
         self.last_fix, self.was_moving = 0.0, False
         self.want_parked = True   # a parked fix is owed (start-up, or the car just stopped) until one lands
-
+        # A car that has ever produced a fix supports location; its 50052s are gaps, not "unsupported".
+        self.has_fix = conn.execute("SELECT 1 FROM positions LIMIT 1").fetchone() is not None
+        self.misses, self.calls = 0, 0            # 50052s in a row; locate() calls since this capture began
+        row = conn.execute("SELECT ts, lat, lng FROM positions ORDER BY ts DESC LIMIT 1").fetchone()
+        self.ref = (row[0], row[1], row[2], _loc_frame(conn, row[0])[0]) if row else None   # last good fix
+        self.rejected, self.said = [], set()      # fixes that failed the jump check, in a row; one-off lines
+    def _judge(self, conn, p, now):
+        """p, or None when the jump check drops it. Says what it did, never where the car is."""
+        odo = _loc_frame(conn, now)[0]
+        verdict, q = _loc_gate(self.ref, p, now, odo)
+        if verdict == "repaired" and "repaired" not in self.said:
+            print("location: CarLinko sent a longitude one digit short; using it x 10 (it fits the last fix)")
+            self.said.add("repaired")
+        if verdict != "drop":
+            return q
+        cand = (now, p[0], p[1], odo)
+        if self.rejected and _loc_gate(self.rejected[-1], p, now, odo)[0] != "ok":
+            self.rejected = []                    # the rejects don't agree with each other: start over
+        self.rejected.append(cand)
+        if len(self.rejected) < LOC_RECOVER:
+            print(f"location: dropped a fix {_loc_km(self.ref[1:3], p):.0f} km from the last one "
+                  f"(allowed {_loc_allow_km(self.ref, now, odo):.1f} km)")
+            return None
+        print(f"location: {LOC_RECOVER} fixes in a row agree on a new place; "
+              "taking it (the car moved while no fix was read)")
+        return p
     def step(self, conn, now):
         """One tick. Returns "unsupported" when CarLinko has no position for this car, else None."""
         moving = _loc_moving(conn)
@@ -571,9 +661,22 @@ class _LocCapture:
         if due:
             self.last_fix = now                   # first, so a failure can't turn into a 5 s retry loop
             p = locate()
+            self.calls += 1
             if p == "unsupported":
-                return "unsupported"
+                self.misses += 1
+                if not self.has_fix and self.misses >= LOC_GIVE_UP:
+                    return "unsupported"
+                if self.has_fix:                  # rare (~1 in 100+ reads); logged in full to spot a pattern
+                    spd = _loc_frame(conn, now)[1]
+                    age = f"{int(now - self.ref[0])}s" if self.ref else "?"
+                    print(f"location: no fix this time (50052): call {self.calls} since start, "
+                          f"{'?' if spd is None else spd} km/h, last fix {age} ago; still trying")
+                p = None
             if p:
+                p = self._judge(conn, p, now)
+            if p:
+                self.misses, self.has_fix, self.rejected = 0, True, []
+                self.ref = (now, p[0], p[1], _loc_frame(conn, now)[0])
                 conn.execute("INSERT OR REPLACE INTO positions(ts, lat, lng, moving) VALUES (?,?,?,?)",
                              (int(now), p[0], p[1], 1 if moving else 0))
                 conn.commit()
@@ -581,7 +684,6 @@ class _LocCapture:
                     self.want_parked = False
         self.was_moving = moving
         return None
-
 def _loc_say_on():
     print(f"location: on (every {LOC_EVERY}s while moving, "
           f"{str(LOC_PARKED) + 's' if LOC_PARKED else 'only on stop'} while parked, "

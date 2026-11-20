@@ -68,16 +68,29 @@ Notes:
 only, as for GETs), body `{"sn": "<DEVICE_SN>", "showAddress": 1}`. Found in the v1.14.10 app
 (`getVehiclePositioningData`). Reply: `{"code":"0000","data":{"lat":..,"lng":..,"address":..}}`.
 - It is CarLinko's **cached** last fix: repeated calls return the same value in about 0.5 s. It does not
-  wake the car, and reading it faster than the T-Box reports gives nothing new.
+  wake the car, and reading it faster than the T-Box reports gives nothing new: it refreshes about every 30 s
+  (reads 25–30 s apart got the same fix back 12–15% of the time while driving on a Tiggo 7), which is why
+  the logger raises any `location_interval` under 30 to 30.
 - `showAddress` must be the integer `0` or `1` (JSON `true` answers `1000`); `GET` answers `1003`. The
   flag reads inverted: `1` gives `address: null`, `0` gives the reverse-geocoded address (observed
   2026-11-19, Tiggo 7 CSH).
-- `50052 查询定位失败` means the cloud holds no position for this car (seen on a J5, Indonesia).
-- **The longitude can arrive a digit short.** On a Tiggo 7 CSH in Malaysia (region `sea`) the cloud sent
-  `lng` 10.1… for a car at E 101.x, exactly the real value ÷ 10, and with `showAddress` 0 it geocoded that
-  to Cameroon. The call still answers `0000`, so nothing flags it. `tools/logger.py` reads a `sea`
-  longitude of 10–18 as × 10 and drops any other longitude outside 90–180; other regions pass through
-  unchanged. Seen on one account only.
+- `50052 查询定位失败` means the cloud holds no position for this car (seen on a J5, Indonesia: three
+  requests, then nothing). A car that **does** have a position answers it too, now and then, mid-drive,
+  between good fixes (a Tiggo 7 CSH in Malaysia, 5 in two days across two accounts; the next read 20 s later
+  always worked, so it is not a rate limit). The logger therefore treats `50052` as "no fix this time" once
+  the car has ever produced a fix, and only idles after three in a row from a car that never has.
+- **The longitude can arrive a digit short, now and then.** On a Tiggo 7 CSH in Malaysia (region `sea`) the
+  cloud sent `lng` 10.1… for a car at E 101.x, exactly the real value ÷ 10, and with `showAddress` 0 it
+  geocoded that to Cameroon. The call still answers `0000`, so nothing flags it. It is intermittent: the same
+  account sent it on 2026-11-19 (at least twice, hours apart) and sent normal 3-digit longitudes in the same
+  E 101.x band on 2026-11-20 (5 reads in a row), and another owner's identical model and region sent 351
+  clean fixes over two days. So it is not the model and not the place; whether it is the firmware, the
+  account or the cloud is not known. `tools/logger.py` has two lines of defence, and they do not conflict:
+  `_loc_fix` reads a `sea` longitude of 10–18 as × 10 and drops any other longitude outside 90–180 (certain,
+  and the only defence for a first fix with nothing to compare it with); `_loc_gate` then judges every fix
+  against the last good one — 200 km/h for the time between them, never more than the odometer moved, plus
+  slack — repairing a short longitude when × 10 fits, in any region, and dropping any other impossible jump
+  unless three rejected fixes in a row agree (the car really did move while nothing was being read).
 
 ## Realtime WebSocket protocol (`:4002`)
 
@@ -524,9 +537,10 @@ would see the car, and send it again. Switching off never deletes anything.
 Where the switch lives: `location.json` (`{"enabled": true}`) in the data directory, else creds.json's
 `location` as the default, else off. It is not in creds.json because `railway_start.sh` rewrites that file
 from `CREDS_JSON` on every boot, which would undo a toggle at the next deploy. The logger reads it every
-5 s, so a switch takes effect without a restart: off, it records nothing and creates no table. When
-CarLinko answers `50052` the logger writes `location_state.json` (`{"unsupported_at": <ts>}`) and idles;
-switching location on again clears it. `location_interval`, `location_parked_interval` and
+5 s, so a switch takes effect without a restart: off, it records nothing and creates no table. When a car
+that has never produced a fix (no row in `positions`) gets `50052` on three reads in a row, the logger writes
+`location_state.json` (`{"unsupported_at": <ts>}`) and idles; switching location on again clears it. A car
+that has had a fix never idles for a `50052`. `location_interval`, `location_parked_interval` and
 `location_keep_days` stay creds.json-only and are read when the logger starts.
 
 ### Place search and chargers — `/api/geocode`, `/api/spklu` (worldwide since 2026-11-19)

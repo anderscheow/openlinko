@@ -317,8 +317,8 @@ generates correct ones for your user and paths, so you shouldn't need to.
 | `full_charge_days` | | how often to recommend a 100% charge. Default `7` for LFP, `90` for NMC |
 | `gmaps_key` | | Google Maps key — enables trip planner + SPKLU map (else OSM fallback) |
 | `location` | | the *default* for **Find my car** (default `false`). The normal way to turn it on is the Location switch in the dashboard (Vehicle tab), which overrides this key. When on, the logger reads the car's position from CarLinko (`/maps/deviceLocate`, a cached fix that doesn't wake the car) and stores it in `carlinko.db`. Not every car has one: if CarLinko answers `50052` the feature goes idle until you switch it off and on again. CarLinko can send the longitude a digit short; for region `sea` the logger repairs that (see `docs/api-map.md`). **Stores where your car has been** — see Privacy below |
-| `location_interval` | | seconds between fixes while driving, default `30` (min `10`) |
-| `location_parked_interval` | | seconds between fixes while parked, default `0` = none (one fix is still read when the car stops and at start-up). Min `300` when set |
+| `location_interval` | | seconds between fixes while driving, default `30`. Min `30`: the car only uploads a new position about every 30 s, so a lower value is raised to `30` (the log says so) |
+| `location_parked_interval` | | seconds between fixes while parked, default `0` = none (one fix is still read when the car stops and at start-up). Min `300` when set (a lower value is raised to `300`) |
 | `location_keep_days` | | days of positions to keep, default `90`; `0` = forever. Restart the logger after changing this or the two intervals above |
 | `dashboard_password` | | set it (login page → Advanced) to lock the dashboard behind a password — **do this if the URL is reachable from the internet** |
 

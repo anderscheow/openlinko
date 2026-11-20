@@ -536,13 +536,28 @@ class LoggerSwitchTest(unittest.TestCase):
         location_settings.set_enabled(self.d, False)                             # the dashboard switch beats it
         self.assertIsNone(self.tick(cap))
 
-    def test_a_50052_marks_the_state_file_idles_and_resumes_after_off_and_on(self):
+    def drive(self, cap, dt=60, km=10):
+        """A tick while the car is driving: fresh frames with an advancing odometer, so a fix is due."""
+        odo = self.conn.execute("select coalesce(max(odo_guess), 1000) from telemetry").fetchone()[0]
+        self.conn.execute("insert or replace into telemetry(ts, odo_guess) values (?, ?)",
+                          (int(self.t + dt) - 200, odo))
+        self.conn.execute("insert or replace into telemetry(ts, odo_guess) values (?, ?)",
+                          (int(self.t + dt) - 5, odo + km))
+        return self.tick(cap, dt=dt)
+    def stored(self):
+        return self.conn.execute("select count(*) from positions").fetchone()[0]
+    def test_a_car_that_never_had_a_fix_idles_after_three_50052s_in_a_row(self):
         location_settings.set_enabled(self.d, True)
         cap = self.tick(None)
         self.locate.return_value = "unsupported"
-        cap = self.tick(cap)
+        for read in (1, 2):                                                      # the J5: it is asked three times...
+            cap = self.tick(cap, dt=61)
+            self.assertIsNotNone(cap, f"still trying after read {read}")
+            self.assertFalse(location_settings.unsupported(self.d))
+        cap = self.tick(cap, dt=61)                                              # ...and then goes quiet
         self.assertIsNone(cap)
         self.assertTrue(location_settings.unsupported(self.d))
+        self.assertEqual(self.locate.call_count, 3)
         self.locate.reset_mock()
         for _ in range(4):
             cap = self.tick(cap, dt=120)
@@ -555,22 +570,142 @@ class LoggerSwitchTest(unittest.TestCase):
         self.assertIsNotNone(cap)
         cap = self.tick(cap)
         self.assertEqual(self.locate.call_count, 1)
-        self.assertEqual(self.conn.execute("select count(*) from positions").fetchone()[0], 1)
-
+        self.assertEqual(self.stored(), 1)
+    def test_a_good_read_before_the_third_50052_means_the_car_has_a_position(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        self.locate.return_value = "unsupported"
+        cap = self.tick(cap, dt=61)
+        cap = self.tick(cap, dt=61)                                              # two misses...
+        self.locate.return_value = (3.139, 101.6869)
+        cap = self.tick(cap, dt=61)                                              # ...then a fix
+        self.assertEqual(self.stored(), 1)
+        self.locate.return_value = "unsupported"
+        for _ in range(8):                                                       # never idle again
+            cap = self.drive(cap)
+        self.assertIsNotNone(cap)
+        self.assertFalse(location_settings.unsupported(self.d))
+    def test_a_50052_mid_drive_is_a_gap_not_the_end_of_location(self):
+        # Seen on a Tiggo 7 in Malaysia: 5 in two days, the next read 20 s later always worked.
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        cap = self.tick(cap)                                                     # a fix is stored
+        self.assertEqual(self.stored(), 1)
+        self.locate.return_value = "unsupported"
+        for _ in range(5):                                                       # more than LOC_GIVE_UP in a row
+            cap = self.drive(cap)
+            self.assertIsNotNone(cap)
+        self.assertFalse(location_settings.unsupported(self.d))
+        self.assertEqual(self.stored(), 1)                                       # nothing invented for the gap
+        self.locate.return_value = (3.14, 101.69)
+        cap = self.drive(cap)
+        self.assertEqual(self.stored(), 2)                                       # and the drive carries on
+        self.assertIn("no fix this time (50052)", self.out.getvalue())
     def test_the_log_never_carries_a_coordinate(self):
         location_settings.set_enabled(self.d, True)
         cap = self.tick(None)                                                    # on
         cap = self.tick(cap)                                                     # a fix is stored
-        self.conn.execute("delete from telemetry")                               # then the car "moves": a fix is due
-        self.conn.execute("insert into telemetry(ts, odo_guess) values (?, 1000), (?, 1010)",
-                          (int(self.t) - 250, int(self.t) - 5))
         self.locate.return_value = "unsupported"
-        cap = self.tick(cap, dt=60)                                              # ... and the cloud says 50052
-        self.assertIsNone(cap)
-        for needle in ("3.139", "101.68"):
-            self.assertNotIn(needle, self.out.getvalue())
-        self.assertIn("50052", self.out.getvalue())
-
-
+        cap = self.drive(cap)                                                    # the cloud says 50052 mid-drive
+        self.locate.return_value = (3.139, 101.6869)
+        cap = self.drive(cap)
+        self.locate.return_value = (48.1, 11.5)                                  # then a fix that cannot be right
+        cap = self.drive(cap)
+        self.assertEqual(self.stored(), 2)
+        out = self.out.getvalue()
+        for needle in ("3.139", "101.68", "48.1", "11.5"):
+            self.assertNotIn(needle, out)
+        self.assertIn("50052", out)
+        self.assertIn("dropped a fix", out)
+    def test_a_fix_the_car_could_not_have_driven_to_is_dropped(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        cap = self.tick(cap)                                                     # (3.139, 101.6869) stored
+        self.locate.return_value = (48.1, 11.5)                                  # Europe, a minute later
+        cap = self.drive(cap)
+        self.assertEqual(self.stored(), 1)
+        self.assertIn("dropped a fix", self.out.getvalue())
+    def test_three_rejected_fixes_that_agree_win_because_the_car_did_move(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        cap = self.tick(cap)
+        self.locate.return_value = (5.9, 116.1)                                  # Kota Kinabalu, 1,600 km away
+        cap = self.drive(cap)
+        cap = self.drive(cap)
+        self.assertEqual(self.stored(), 1)                                       # two agreeing rejects: not yet
+        cap = self.drive(cap)
+        self.assertEqual(self.stored(), 2)                                       # the third wins
+        self.assertEqual(self.conn.execute("select lat from positions order by ts desc").fetchone()[0], 5.9)
+        self.assertIn("agree on a new place", self.out.getvalue())
+    def test_rejects_that_disagree_with_each_other_start_over(self):
+        location_settings.set_enabled(self.d, True)
+        cap = self.tick(None)
+        cap = self.tick(cap)
+        for fix in ((48.1, 11.5), (35.7, 139.7), (48.1, 11.5), (35.7, 139.7), (48.1, 11.5)):
+            self.locate.return_value = fix
+            cap = self.drive(cap)
+        self.assertEqual(self.stored(), 1)                                       # never three alike in a row
+    def test_a_longitude_one_digit_short_is_repaired_when_it_fits_the_last_fix(self):
+        # The region repair is the first line; this is the other, for a region with no known box.
+        location_settings.set_enabled(self.d, True)
+        with patch.object(logger, "_loc_region_lng", lambda lng, region: lng):
+            cap = self.tick(None)
+            cap = self.tick(cap)
+            self.locate.return_value = (3.139, 10.16869)                         # 101.6869 lost its first digit
+            cap = self.drive(cap)
+        self.assertEqual(self.stored(), 2)
+        self.assertAlmostEqual(self.conn.execute("select lng from positions order by ts desc").fetchone()[0],
+                               101.6869, places=3)
+        self.assertIn("one digit short", self.out.getvalue())
+class GateTest(unittest.TestCase):
+    """The jump check on its own: the last good fix against a new one."""
+    REF = (1_800_000_000, 3.139, 101.6869, 1000)         # ts, lat, lng, odometer
+    def gate(self, p, dt=60, odo=1000, ref=None):
+        ref = ref or self.REF
+        return logger._loc_gate(ref, p, ref[0] + dt, odo)
+    def test_the_first_fix_has_nothing_to_be_judged_against(self):
+        self.assertEqual(logger._loc_gate(None, (48.1, 11.5), 1_800_000_000, None), ("ok", (48.1, 11.5)))
+    def test_a_short_drive_passes(self):
+        self.assertEqual(self.gate((3.15, 101.70), odo=1001), ("ok", (3.15, 101.70)))
+    def test_a_jump_no_car_could_make_is_dropped(self):
+        self.assertEqual(self.gate((48.1, 11.5)), ("drop", None))
+    def test_the_odometer_caps_what_a_long_parked_gap_allows(self):
+        # A week parked at 200 km/h allows 33,000 km; the odometer says it did not move, so 3 km at most.
+        week = 7 * 86400
+        self.assertEqual(self.gate((3.20, 101.69), dt=week, odo=1000)[0], "drop")        # ~6 km away
+        self.assertEqual(self.gate((3.145, 101.69), dt=week, odo=1000)[0], "ok")         # ~1 km: GPS jitter
+    def test_a_digit_short_longitude_is_repaired_even_after_a_long_gap(self):
+        self.assertEqual(self.gate((3.139, 10.16869), dt=7 * 86400, odo=1000), ("repaired", (3.139, 101.6869)))
+        # ...and with no odometer at all (the logger was down), where the allowance is huge:
+        ref = (self.REF[0], self.REF[1], self.REF[2], None)
+        verdict, fix = self.gate((3.139, 10.16869), dt=7 * 86400, odo=None, ref=ref)
+        self.assertEqual((verdict, round(fix[1], 4)), ("repaired", 101.6869))
+    def test_a_real_drive_near_longitude_zero_is_never_repaired(self):
+        london = (1_800_000_000, 51.5, -0.12, 500)
+        self.assertEqual(logger._loc_gate(london, (51.5, -0.012), london[0] + 1800, 520)[0], "ok")
+    def test_the_allowance_is_speed_for_the_time_but_never_more_than_the_odometer(self):
+        ref = self.REF
+        self.assertAlmostEqual(logger._loc_allow_km(ref, ref[0] + 3600, None), 200 + logger.LOC_SLACK_KM)
+        self.assertAlmostEqual(logger._loc_allow_km(ref, ref[0] + 3600, 1010), 11 + logger.LOC_SLACK_KM)
+        self.assertAlmostEqual(logger._loc_allow_km(ref, ref[0] - 100, None), logger.LOC_SLACK_KM)   # a clock step
+    def test_distance_is_great_circle(self):
+        self.assertAlmostEqual(logger._loc_km((0, 0), (0, 1)), 111.2, delta=0.3)
+        self.assertAlmostEqual(logger._loc_km((3.139, 101.6869), (3.139, 101.6869)), 0.0)
+class IntervalFloorTest(unittest.TestCase):
+    """The car uploads about every 30 s, so reading faster only repeats a fix and loads CarLinko."""
+    def test_the_floors(self):
+        self.assertEqual((logger.LOC_MIN_EVERY, logger.LOC_MIN_PARKED), (30, 300))
+        self.assertGreaterEqual(logger.LOC_EVERY, 30)
+        self.assertTrue(logger.LOC_PARKED == 0 or logger.LOC_PARKED >= 300)
+    def test_a_lower_interval_is_raised_and_says_so(self):
+        out = io.StringIO()
+        with patch.dict(logger._C, {"location_interval": 10}), contextlib.redirect_stdout(out):
+            self.assertEqual(logger._loc_int("location_interval", 30, logger.LOC_MIN_EVERY, 86400), 30)
+        self.assertIn("location_interval=10 is below the minimum, using 30", out.getvalue())
+    def test_a_value_in_range_is_left_alone_and_silent(self):
+        out = io.StringIO()
+        with patch.dict(logger._C, {"location_interval": 40}), contextlib.redirect_stdout(out):
+            self.assertEqual(logger._loc_int("location_interval", 30, logger.LOC_MIN_EVERY, 86400), 40)
+        self.assertEqual(out.getvalue(), "")
 if __name__ == "__main__":
     unittest.main()
