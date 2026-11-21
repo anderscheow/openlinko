@@ -164,6 +164,51 @@ class GoogleSuggestTest(unittest.TestCase):
         self.assertNotIn("locationBias", sent)
 
 
+class GoogleChargerRadiusTest(unittest.TestCase):
+    """Google answers INVALID_ARGUMENT to a search circle wider than 50 km; the trip planner asks for 55 km."""
+
+    def setUp(self):
+        patcher = patch.object(server, "_gkey", return_value="key")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def place(name="Gentari"):
+        return {"displayName": {"text": name}, "location": {"latitude": 3.1, "longitude": 101.6}}
+
+    def radius_sent(self, call):
+        sent = []
+
+        def post(url, body, mask):
+            sent.append(body["locationRestriction"]["circle"]["radius"])
+            return {"places": [self.place()]}
+
+        with patch.object(server, "_g_post", post):
+            call()
+        return sent
+
+    def test_the_planners_wide_net_is_cut_to_what_google_accepts(self):
+        self.assertEqual(self.radius_sent(lambda: server._spklu_list(3.139, 101.687, 55000)), [50000.0])
+
+    def test_the_nearest_charger_lookup_is_cut_too(self):
+        self.assertEqual(self.radius_sent(lambda: server._g_spklu(3.139, 101.687, 80000)), [50000.0])
+
+    def test_a_radius_google_accepts_is_sent_as_asked(self):
+        self.assertEqual(self.radius_sent(lambda: server._spklu_list(3.139, 101.687, 12000)), [12000.0])
+
+    def test_the_fallback_still_searches_the_full_55_km(self):
+        asked = []
+
+        def refused(url, body, mask):
+            raise OSError("400")
+
+        with patch.object(server, "_g_post", refused), \
+                patch.object(server, "_http_post",
+                             lambda url, data, timeout=40: asked.append(data["data"]) or {"elements": []}):
+            server._spklu_list(3.139, 101.687, 55000)
+        self.assertIn("around:55000,", asked[0])
+
+
 class ChargersTest(unittest.TestCase):
     def setUp(self):
         patcher = patch.object(server, "_gkey", return_value=None)

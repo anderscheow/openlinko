@@ -2512,6 +2512,13 @@ def _g_post(url, body, fieldmask, timeout=9):
     _g_note(True)
     return data
 
+_G_MAX_RADIUS_M = 50000.0                              # Places (New) answers INVALID_ARGUMENT to a circle wider than this
+
+def _g_circle(lat, lon, r):
+    """A circle Google accepts. A caller may want a wider net (the trip planner asks 55 km, Overpass takes any radius):
+    Google gets the widest it allows and the OpenStreetMap fallback still gets the full ask."""
+    return {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": min(float(r), _G_MAX_RADIUS_M)}}
+
 def _service_centres(country, model, lat, lon):
     """Nearby brand matches; the official locator remains the authority on service capability."""
     brand = maintenance.brand_for(model)
@@ -2625,7 +2632,7 @@ def _g_geocode(q):
 def _g_spklu(lat, lon, r=30000):                       # Google EV-charging nearby (covers SPKLU OSM misses)
     d = _g_post("https://places.googleapis.com/v1/places:searchNearby",
                 {"includedTypes": ["electric_vehicle_charging_station"], "maxResultCount": 8,
-                 "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(r)}}},
+                 "locationRestriction": _g_circle(lat, lon, r)},
                 "places.displayName,places.location")
     best = None
     for pl in d.get("places", []):
@@ -2762,7 +2769,7 @@ def _spklu_list(lat, lon, r=35000, strict=False):      # all candidate charging 
         try:
             d = _g_post("https://places.googleapis.com/v1/places:searchNearby",
                         {"includedTypes": ["electric_vehicle_charging_station"], "maxResultCount": 15,
-                         "locationRestriction": {"circle": {"center": {"latitude": lat, "longitude": lon}, "radius": float(r)}}},
+                         "locationRestriction": _g_circle(lat, lon, r)},
                         "places.displayName,places.location,places.evChargeOptions")
             out = [{"name": pl.get("displayName", {}).get("text", "SPKLU"),
                     "lat": pl["location"]["latitude"], "lon": pl["location"]["longitude"], **_ev_info(pl)}
